@@ -30,10 +30,7 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOptions<IntranetOptions>()
-	.Bind(builder.Configuration.GetSection(IntranetOptions.SectionName))
-	.ValidateDataAnnotations()
-	.ValidateOnStart();
+builder.Services.AddOptions<IntranetOptions>().Bind(builder.Configuration.GetSection(IntranetOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
 
 // Data Protection: en producción usar /home, que sí es escribible en App Service Linux.
 // En local, seguir usando ContentRootPath para que las claves queden dentro del proyecto.
@@ -54,8 +51,7 @@ builder.Services.AddDataProtection()
 	.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
 
 // Add services to the container.
-builder.Services.AddRazorComponents()
-	.AddInteractiveServerComponents();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
 builder.Services.AddMudServices();
 builder.Services.AddHealthChecks();
@@ -92,12 +88,12 @@ builder.Services.AddCascadingAuthenticationState();
 // el App Service. Se valida aquí para fallar rápido en el arranque con un
 // mensaje claro, en vez de que el error aparezca más tarde y de forma
 // confusa en la primera petición que toque la base de datos (ej. login).
-var connectionString = builder.Configuration.GetConnectionString("Default");
+var connectionString = builder.Configuration.GetConnectionString("IMtemplate");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
 	throw new InvalidOperationException(
-		"No se encontró la cadena de conexión 'ConnectionStrings:Default'. " +
-		"Configúrala con 'dotnet user-secrets set \"ConnectionStrings:Default\" \"<cadena>\"' " +
+		"No se encontró la cadena de conexión 'ConnectionStrings:IMtemplate'. " +
+		"Configúrala con 'dotnet user-secrets set \"ConnectionStrings:IMtemplate\" \"<cadena>\"' " +
 		"(apuntando a Supabase o a la réplica local de docker-compose.yml), " +
 		"o en appsettings.Development.json para desarrollo local.");
 }
@@ -218,13 +214,10 @@ builder.Services.AddScoped<IEmailSender, LoggingEmailSender>();
 // se usa la implementación local en disco, válida solo para desarrollo: en
 // ningún caso se exponen URLs públicas, el contenido se sirve desde la
 // aplicación tras validar los permisos del usuario.
-builder.Services.Configure<MessagingOptions>(
-	builder.Configuration.GetSection(MessagingOptions.SectionName));
-builder.Services.Configure<MessagingAttachmentStorageOptions>(
-	builder.Configuration.GetSection(MessagingAttachmentStorageOptions.SectionName));
+builder.Services.Configure<MessagingOptions>(builder.Configuration.GetSection(MessagingOptions.SectionName));
+builder.Services.Configure<MessagingAttachmentStorageOptions>(builder.Configuration.GetSection(MessagingAttachmentStorageOptions.SectionName));
 
-var attachmentStorageConnectionString =
-	builder.Configuration[$"{MessagingAttachmentStorageOptions.SectionName}:ConnectionString"];
+var attachmentStorageConnectionString = builder.Configuration[$"{MessagingAttachmentStorageOptions.SectionName}:ConnectionString"];
 
 if (!string.IsNullOrWhiteSpace(attachmentStorageConnectionString))
 {
@@ -350,8 +343,7 @@ app.UseAntiforgery();
 
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapStaticAssets();
-app.MapRazorComponents<App>()
-	.AddInteractiveServerRenderMode();
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.MapHub<MessagingHub>(MessagingHub.HubPath);
 
@@ -368,10 +360,7 @@ app.MapGet("/messaging/attachments/{attachmentId:guid}", async (
 	if (!result.Succeeded || result.Value is null)
 		return Results.NotFound();
 
-	return Results.File(
-		result.Value.Content,
-		result.Value.ContentType,
-		result.Value.FileName);
+	return Results.File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
 }).RequireAuthorization(MessagingPolicies.AccessMessaging);
 
 // Cierre de sesión: se implementa como endpoint dedicado (no como componente

@@ -76,7 +76,7 @@ no determinan la identidad visible de la empresa.
 
    ```powershell
    dotnet user-secrets init --project src/MemByte.Web
-   dotnet user-secrets set "ConnectionStrings:Default" "<conexion-postgresql-de-esta-empresa>" --project src/MemByte.Web
+   dotnet user-secrets set "ConnectionStrings:IMtemplate" "<conexion-postgresql-de-esta-empresa>" --project src/MemByte.Web
    ```
 
    No se incluyen conexiones ni contraseñas en los perfiles de ejecución.
