@@ -8,36 +8,35 @@ param planName string
 @maxLength(24)
 param keyVaultName string
 
-param registryName string = 'acrmembyte${uniqueString(resourceGroup().id)}'
-param imageRepository string = 'membyte-im'
+param registryName string
+param imageRepository string = 'intranet'
+
+@minLength(1)
+@maxLength(100)
+param applicationName string = 'Intranet'
+
+@minLength(1)
+@maxLength(100)
+param companyName string = 'Mi empresa'
 
 @description('Git commit SHA tag. The image must already exist in ACR.')
 @minLength(1)
 param imageTag string
 
-@allowed([
-  'B1'
-  'B2'
-  'B3'
-  'S1'
-  'S2'
-  'S3'
-  'P1v3'
-  'P2v3'
-  'P3v3'
-])
-param planSku string = 'B1'
+@minLength(1)
+@maxLength(127)
+param connectionStringSecretName string = 'ConnectionStrings--IntranetTemplate'
+
+@minLength(1)
+@maxLength(127)
+param registryPullTokenName string = 'template-intranet-pull'
+
+@minLength(1)
+@maxLength(127)
+param registryPullTokenPasswordSecretName string = 'TemplateAcrPullPassword'
 
 @description('Optional existing Key Vault secret holding the Azure Blob attachment connection string.')
 param attachmentConnectionSecretName string = ''
-
-module containerRegistry './registry.bicep' = {
-  name: 'container-registry'
-  params: {
-    location: location
-    registryName: registryName
-  }
-}
 
 resource pullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${appName}-runtime'
@@ -48,68 +47,27 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing =
   name: registryName
 }
 
-resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, pullIdentity.id, 'AcrPull')
-  scope: registry
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-    principalId: pullIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
-  dependsOn: [
-    containerRegistry
-  ]
-}
-
-resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+resource vault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
-  location: location
-  properties: {
-    tenantId: tenant().tenantId
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    enableRbacAuthorization: true
-    enableSoftDelete: true
-    softDeleteRetentionInDays: 90
-    accessPolicies: []
-    publicNetworkAccess: 'Enabled'
-  }
 }
 
-resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: '${appName}-logs'
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: 30
-  }
-}
-
-resource insights 'Microsoft.Insights/components@2020-02-02' = {
-  name: '${appName}-insights'
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: workspace.id
-  }
-}
-
-resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
+resource plan 'Microsoft.Web/serverfarms@2023-12-01' existing = {
   name: planName
-  location: location
-  kind: 'linux'
-  sku: {
-    name: planSku
-    capacity: 1
-  }
-  properties: {
-    reserved: true
-  }
+}
+
+resource connectionSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = {
+  parent: vault
+  name: connectionStringSecretName
+}
+
+resource registryPullTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = {
+  parent: vault
+  name: registryPullTokenPasswordSecretName
+}
+
+resource attachmentSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = {
+  parent: vault
+  name: empty(attachmentConnectionSecretName) ? connectionStringSecretName : attachmentConnectionSecretName
 }
 
 resource app 'Microsoft.Web/sites@2023-12-01' = {
@@ -117,7 +75,7 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
   location: location
   kind: 'app,linux,container'
   identity: {
-    type: 'SystemAssigned, UserAssigned'
+    type: 'UserAssigned'
     userAssignedIdentities: {
       '${pullIdentity.id}': {}
     }
@@ -128,9 +86,7 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
     httpsOnly: true
     clientAffinityEnabled: true
     siteConfig: {
-      linuxFxVersion: 'DOCKER|${containerRegistry.outputs.loginServer}/${imageRepository}:${imageTag}'
-      acrUseManagedIdentityCreds: true
-      acrUserManagedIdentityID: pullIdentity.properties.clientId
+      linuxFxVersion: 'DOCKER|${registry.properties.loginServer}/${imageRepository}:${imageTag}'
       alwaysOn: true
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
@@ -139,14 +95,31 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
       healthCheckPath: '/health'
     }
   }
-  dependsOn: [
-    acrPull
-  ]
 }
 
 resource secretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(vault.id, pullIdentity.id, 'KeyVaultSecretsUser')
-  scope: vault
+  name: guid(connectionSecret.id, pullIdentity.id, 'KeyVaultSecretsUser')
+  scope: connectionSecret
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: pullIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource registryPullTokenSecretUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registryPullTokenSecret.id, pullIdentity.id, 'KeyVaultRegistryPullSecretUser')
+  scope: registryPullTokenSecret
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: pullIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource attachmentSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(attachmentConnectionSecretName)) {
+  name: guid(attachmentSecret.id, pullIdentity.id, 'KeyVaultAttachmentSecretUser')
+  scope: attachmentSecret
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
     principalId: pullIdentity.properties.principalId
@@ -159,19 +132,26 @@ resource settings 'Microsoft.Web/sites/config@2023-12-01' = {
   name: 'appsettings'
   properties: union({
     ASPNETCORE_ENVIRONMENT: 'Production'
+    Intranet__ApplicationName: applicationName
+    Intranet__CompanyName: companyName
+    DataProtection__ApplicationName: appName
     ASPNETCORE_HTTP_PORTS: '8080'
     // App Service terminates TLS and only exposes the container through its proxy.
     ASPNETCORE_FORWARDEDHEADERS_ENABLED: 'true'
     WEBSITES_PORT: '8080'
     WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'true'
-    ConnectionStrings__Default: '@Microsoft.KeyVault(SecretUri=${vault.properties.vaultUri}secrets/ConnectionStrings--Default/)'
-    ApplicationInsights__ConnectionString: insights.properties.ConnectionString
+    DOCKER_REGISTRY_SERVER_URL: 'https://${registry.properties.loginServer}'
+    DOCKER_REGISTRY_SERVER_USERNAME: registryPullTokenName
+    DOCKER_REGISTRY_SERVER_PASSWORD: '@Microsoft.KeyVault(SecretUri=${vault.properties.vaultUri}secrets/${registryPullTokenPasswordSecretName}/)'
+    ConnectionStrings__IMtemplate: '@Microsoft.KeyVault(SecretUri=${vault.properties.vaultUri}secrets/${connectionStringSecretName}/)'
     Messaging__AttachmentStorage__LocalRootPath: '/home/.messaging-attachments'
   }, empty(attachmentConnectionSecretName) ? {} : {
     Messaging__AttachmentStorage__ConnectionString: '@Microsoft.KeyVault(SecretUri=${vault.properties.vaultUri}secrets/${attachmentConnectionSecretName}/)'
   })
   dependsOn: [
     secretsUser
+    registryPullTokenSecretUser
+    attachmentSecretsUser
   ]
 }
 
@@ -195,4 +175,4 @@ output appName string = app.name
 output appUrl string = 'https://${app.properties.defaultHostName}'
 output keyVaultName string = vault.name
 output runtimePrincipalId string = pullIdentity.properties.principalId
-output image string = '${containerRegistry.outputs.loginServer}/${imageRepository}:${imageTag}'
+output image string = '${registry.properties.loginServer}/${imageRepository}:${imageTag}'
