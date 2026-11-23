@@ -2,7 +2,7 @@
 
 > **Convenio de primero:** estas instrucciones rigen cómo debe actuar el agente en esta solución. **Prioriza la seguridad:** un cambio que pueda enmascarar un riesgo (contraseñas más débiles, warnings ignorados, validaciones relajadas, telemetría de seguridad desactivada) es una devolución técnica, no una mejora. Al personalizar la plantilla para un cliente, **no se debe de-hardening ningún valor** a menos que haya una razón documentada; si se cambia un valor relevante de seguridad, anotar la razón en el commit.
 >
-> **Aislamiento de la plantilla:** en IM-template, el usuario quiere aislamiento total en un esquema dedicado de Supabase para la plantilla y evitar usar/compartir el esquema de producción de MemByte. **Ningún dato, secreto ni credencial de otras instalaciones se reutiliza ni se copia.**
+> **Aislamiento de datos:** esta plantilla usa un esquema Supabase y secretos propios; nunca reutiliza datos, esquema ni credenciales de MemByte. El rol de base de datos de la app debe limitarse al esquema de la plantilla, porque `Search Path` no es una frontera de autorización. Para validar esta plantilla se permite compartir temporalmente el grupo de recursos, plan de App Service, ACR y Key Vault, pero con una app, identidad de ejecución y secretos de Key Vault independientes. Esta excepción no aplica a instalaciones de clientes.
 
 ## 1. Contexto: plantilla reutilizable para cualquier cliente
 
@@ -42,7 +42,7 @@
 
 - Nada de cadenas de conexión, claves ni credenciales en `appsettings.json` ni en código fuente.
 - Desarrollo: `dotnet user-secrets` (propios por instalación; desactivar tras el primer arranque). Producción: Key Vault + Managed Identity; el arranque falla rápido si falta la cadena (`ConnectionStrings:IMtemplate`).
-- **Clave efectiva:** `Program.cs` lee `GetConnectionString("IMtemplate")` → `ConnectionStrings:IMtemplate` (env var `ConnectionStrings__IMtemplate` → vault secret `ConnectionStrings--IMtemplate`). Al personalizar: setear `IMtemplate` y comprobar que no haya clave `ConnectionStrings:Default`/`ConnectionStrings--Default` olvidada en secrets.
+- **Clave efectiva:** `Program.cs` lee `GetConnectionString("IMtemplate")` → `ConnectionStrings:IMtemplate`. Cada instalación debe apuntar a su propio esquema/base y secreto de Key Vault; la validación de esta plantilla usa `ConnectionStrings--IntranetTemplate`, no el secreto de MemByte. Nunca dar a la identidad de la app acceso al vault completo.
 - Data Protection: claves persistidas fuera de memoria (prod: `/home/.dataprotection-keys`; local: dentro del ContentRootPath); `DataProtection:ApplicationName` estable por instalación — cambiarlo invalida cookies y tokens existentes.
 
 ### 3.3 Cabeceras y transporte
@@ -84,7 +84,7 @@
 ## 6. Reglas duras y normas de estilo por defecto
 
 - **No de-hardening** (sección 3): no debilitar validaciones, cookies, políticas de contenido, rate limiting o storage de secretos sin una razón documentada.
-- **Hard lines:** no existe conexión a credenciales ni datos de otras empresas en la plantilla; todo dato de otro tenant se debe dejar fuera y aislar con `ClientId`.
+- **Hard lines:** no reutilizar datos, esquemas, secretos ni credenciales de otra instalación. La excepción temporal de Azure para validar esta plantilla comparte recursos de cómputo/registro/vault, pero usa secretos con nombre distinto y permisos RBAC por secreto; toda instalación de cliente es independiente.
 - **Normas observadas:** tabuladores; convenciones de nomenclatura `XxxDto`/`XxxRequest`/`XxxOperationResult`/`IXxxService`; `MemByte.*` para ensamblados y namespaces; inglés para identificadores, español para mensajes y comentarios; `CancellationToken` obligatorio en async; `AsNoTracking()` en lecturas; paginación servidor; XML docs en API pública.
 - Antes de implementar: cerrar la ambigüedad con la persona; hacer cambios reversibles; no hacer cambios fuera del pedido.
 

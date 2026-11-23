@@ -446,8 +446,7 @@ builder.Configuration.AddAzureKeyVault(
 ```yaml
 # En el workflow de CI (.github/workflows/ci.yml)
 - name: Audit NuGet packages for vulnerabilities
-  run: dotnet list package --vulnerable --include-transitive
-  working-directory: src/
+  run: dotnet list IM-template.slnx package --vulnerable --include-transitive
 ```
 
 ### 4.3 Prevención de Vulnerabilidades Comunes
@@ -718,17 +717,17 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore IM-template.slnx
 
       - name: Audit NuGet packages
-        run: dotnet list package --vulnerable --include-transitive
+        run: dotnet list IM-template.slnx package --vulnerable --include-transitive
         # Falla el build si hay vulnerabilidades (NuGetAudit=true en Directory.Build.props)
 
       - name: Build (treat warnings as errors)
-        run: dotnet build --no-restore --configuration Release
+        run: dotnet build IM-template.slnx --no-restore --configuration Release
 
       - name: Run tests with coverage
-        run: dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage"
+        run: dotnet test IM-template.slnx --no-build --configuration Release --collect:"XPlat Code Coverage"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

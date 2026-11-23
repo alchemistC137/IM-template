@@ -9,38 +9,29 @@
 
 | Recurso | Declaración y propósito |
 |---|---|
-| ACR Basic | `infra/registry.bicep`, registro privado sin usuario administrador; imágenes `intranet:<commit-sha>`. |
-| App Service Plan Linux | `infra/main.bicep`, B1 por defecto, una instancia; F1 ya no se utiliza. B1 y ACR tienen coste; telemetría/App Insights es opcional y tiene coste cuando se activa. Revisar presupuesto y cuotas antes de aplicar. |
-| App Service | Docker Linux/amd64, puerto 8080, HTTPS obligatorio, TLS 1.2+, WebSockets y afinidad para Blazor Server. FTP y publicación básica SCM deshabilitados. |
-| Identidad administrada de ejecución | `<appName>-runtime`, `AcrPull` solo sobre ACR y `Key Vault Secrets User` solo sobre el vault; sin claves de registro. También se conserva la identidad de sistema del sitio existente. |
-| Key Vault | RBAC y soft delete; secretos cargados por operadores fuera de Bicep. App Service resuelve las referencias con la identidad de ejecución. |
-| Log Analytics / Application Insights — **opcional, no despliegue por defecto** | No se crea en el flujo actual. Si se reactiva: workspace con retención de 30 días y telemetría de aplicación; conexión en `ApplicationInsights__ConnectionString`. Implementación a re-añadir en `infra/main.bicep`: recurso `Microsoft.Insights/components`, `WorkspaceResourceId` sobre el workspace `Microsoft.OperationalInsights/workspaces` y setting `ApplicationInsights__ConnectionString` en la sección `settings`. |
-| PostgreSQL / Supabase | No se crea ni modifica con esta plantilla. Migraciones y cuentas de producción se gestionan por separado. |
+| App Service Plan Linux | Recurso existente referenciado por `infra/main.bicep`; la validación comparte temporalmente el plan de MemByte y no modifica SKU/capacidad. Una instalación cliente crea el suyo con `infra/bootstrap.bicep`. |
+| App Service | Aplicación distinta, Docker Linux/amd64, puerto 8080, HTTPS obligatorio, TLS 1.2+, WebSockets y afinidad para Blazor Server. FTP y publicación básica SCM deshabilitados. |
+| ACR | Recurso existente. La imagen se publica en el repositorio `intranet` con un token ACR limitado a ese repositorio; el token de lectura de la app es distinto y solo tiene lectura de `intranet`. |
+| Identidad administrada de ejecución | `<appName>-runtime`, exclusiva de esta aplicación. Puede ser técnicamente user-assigned y compartirse, pero no se reutiliza la identidad de MemByte; sus accesos de Key Vault se limitan a secretos concretos. |
+| Key Vault | Recurso existente compartido temporalmente. La app solo recibe `Key Vault Secrets User` sobre su secreto de conexión, su secreto de lectura ACR y, opcionalmente, el secreto de adjuntos. |
+| PostgreSQL / Supabase | No se crea ni modifica con esta plantilla. La cadena apunta a un esquema Supabase propio, usando `Search Path` explícito; no se usa el esquema de producción de MemByte. |
+| Log Analytics / Application Insights — **opcional** | No se crea ni se configura en el flujo de validación. Si se habilita, usar telemetría aislada para la instalación. |
 
-`infra/production.bicepparam` toma los nombres de recursos de las variables de entorno
-`AZURE_APP_NAME`, `AZURE_PLAN_NAME` y `AZURE_KEY_VAULT_NAME`, con ubicación de ejemplo
-`spaincentral` (Spain Central). Los valores de respaldo `*-example` solo sirven para
-compilar en CI; CD exige valores explícitos, junto con `INTRANET_APPLICATION_NAME`
-e `INTRANET_COMPANY_NAME`, que se aplican a la configuración visible de la intranet.
-El registro ACR se aprovisiona en la ubicación del grupo y su nombre se deriva de
-forma estable del ID del grupo. Mantener el grupo en Spain Central para que coincidan.
-Antes de aplicar, comprobar disponibilidad regional y cuota de B1 Linux, ACR y
-telemetría/App Insights (si se habilita), además de la disponibilidad global de los
-nombres del sitio y del vault.
-Estos nombres no se han reservado ni se ha comprobado su disponibilidad en Azure.
-Cada empresa debe tener su propio grupo, base de datos, identidades y secretos.
-No apuntar a recursos de MemByte ni de otros clientes. Esta plantilla no migra
-automáticamente datos ni configuraciones de otra instalación.
+Para validar esta plantilla se comparten solo el grupo de recursos, el plan, ACR y Key Vault.
+No se comparte la app, la identidad de ejecución, los secretos, las claves de Data Protection
+ni el esquema de base de datos. `infra/main.bicep` solo referencia el plan, ACR y vault; CD
+solo cambia la imagen de la app existente. No ejecuta un despliegue de grupo ni modifica esos
+recursos. El secreto de conexión por defecto es `ConnectionStrings--IntranetTemplate`.
 
-El grupo de recursos y la confianza OIDC se preparan una vez como bootstrap.
-Las ejecuciones normales son incrementales e idempotentes: no eliminan la base de
-datos, secretos ni recursos ajenos. La configuración de aplicación declarada en Bicep
-es autoritativa: añadir allí cualquier setting adicional necesario antes de migrar.
+Cada cliente debe crear un repositorio, grupo de recursos, base de datos/esquema, plan, ACR,
+Key Vault, identidades y secretos propios. `infra/bootstrap.bicep` crea los recursos de apoyo
+para una instalación cliente nueva; nunca ejecutar ese bootstrap sobre el grupo compartido
+con MemByte. Esta plantilla no migra datos ni configuraciones de otra instalación.
 
 ## 2. Prerrequisitos y bootstrap
 
 - Azure CLI con Bicep, Docker con motor Linux y .NET 10 SDK para validación local.
-- Suscripción Azure, cuota para B1 Linux y permisos para crear recursos/asignar roles.
+- Suscripción Azure y permisos para crear o consultar los recursos que correspondan.
 - GitHub Actions habilitado y un environment `production`; restringir sus ramas de
   despliegue mediante **Selected branches and tags → Branch → master**.
   No usar **Protected branches only** si no existen ramas protegidas.
@@ -72,37 +63,42 @@ foreach ($provider in @("Microsoft.Web", "Microsoft.ContainerRegistry", "Microso
 }
 ```
 
+Estos comandos de creación de grupo y bootstrap son solo para instalaciones de clientes.
+En la validación de esta plantilla, omitirlos y usar el grupo existente de MemByte.
+
 Si Spain Central devuelve cuota Linux 0 o un servicio no está disponible, detener el
 despliegue y revisar las cuotas/disponibilidad antes de elegir otra región. No cambiar
 de región automáticamente. No se puede mover un sitio o plan existente simplemente
 cambiando `location`.
 
-### Identidad OIDC para GitHub Actions
+### Identidad OIDC de despliegue
 
-Para un bootstrap nuevo, crear una aplicación Entra y su service principal, sin
-generar contraseña. Usar una identidad exclusiva de esta instalación, sin reutilizar
-la de MemByte ni la de otro cliente:
+La identidad de GitHub Actions es distinta de la identidad administrada de ejecución.
+Una identidad user-assigned podría asociarse a varias apps, pero se recomienda mantener
+una identidad runtime propia por aplicación para evitar compartir permisos.
+Para el entorno de validación, usar una identidad OIDC propia de este repositorio y
+concederle `Website Contributor` únicamente sobre el App Service de la plantilla; no
+otorgar `Contributor` ni permisos de asignación RBAC en el grupo compartido. El token ACR
+de escritura se limita por scope map al repositorio `intranet` y se guarda como secretos
+del environment; la identidad OIDC no recibe acceso de escritura al ACR ni a Key Vault.
+
+Para cada instalación cliente nueva, usar una identidad OIDC exclusiva y aplicar los
+mismos permisos limitados a su App Service. No reutilizar la identidad de MemByte ni
+asignarle roles de grupo/suscripción. El aprovisionamiento inicial de la app y sus
+asignaciones RBAC se ejecuta una vez por un operador autorizado; CD no ejecuta Bicep.
+Después del aprovisionamiento inicial, asignar `Website Contributor` a la identidad OIDC
+sobre el ID del App Service, nunca sobre el grupo compartido. Definir el Client ID de la
+aplicación Entra creada para GitHub Actions y resolver su objeto de service principal:
 
 ```powershell
-$clientId = az ad app create --display-name "intranet-ejemplo-github-production" --query appId -o tsv
-$principalId = az ad sp create --id $clientId --query id -o tsv
-$scope = az group show --name $rg --query id -o tsv
-
-az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role Contributor --scope $scope
-az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role AcrPush --scope $scope
+$clientId = "<client-id-de-la-identidad-oidc>"
+$principalId = az ad sp show --id $clientId --query id --output tsv
+if (-not $principalId) { throw "No se encontró el service principal de la identidad OIDC." }
+$appId = az webapp show --resource-group $rg --name $env:AZURE_APP_NAME --query id --output tsv
+if (-not $appId) { throw "No se encontró el App Service de la plantilla." }
+az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal `
+    --role "Website Contributor" --scope $appId
 ```
-
-`Contributor` no permite crear asignaciones RBAC por sí solo. En el IAM del grupo,
-añadir también `Role Based Access Control Administrator` a la misma aplicación.
-En Condiciones, elegir **Restringir roles y tipos de entidades de seguridad**:
-permitir únicamente los roles `AcrPull` y `Key Vault Secrets User` y el tipo
-**Entidades de servicio** (`Service principals`, que incluye identidades administradas).
-Esta condición permite asignar los permisos de ejecución definidos en Bicep sin
-autorizar la asignación de cualquier rol. Limitar las tres asignaciones al grupo
-dedicado; no conceder Owner a nivel de suscripción. `AcrPush` en el grupo permite
-publicar en el registro recién creado sin depender de un paso manual posterior.
-La identidad de CD no necesita leer los secretos del vault. El bootstrap requiere
-permisos Entra además de Azure RBAC; puede hacerlo un administrador distinto.
 
 En Entra → App registrations → esa aplicación → Federated credentials, añadir:
 
@@ -117,75 +113,104 @@ Si usa sujetos con IDs inmutables, emplear su propietario e ID de repositorio re
 en vez del formato estándar anterior. No copiar el sujeto de este repositorio ni
 los IDs de otro cliente; no son los IDs de la aplicación Entra.
 
-En GitHub → Settings → Environments → `production` → Variables:
+En GitHub → Settings → Environments → `production` → Variables y Secrets:
 
-| Variable | Contenido |
+| Variable/secret | Contenido |
 |---|---|
-| `AZURE_CLIENT_ID` | `$clientId` |
-| `AZURE_TENANT_ID` | Tenant de `az account show --query tenantId -o tsv` |
-| `AZURE_SUBSCRIPTION_ID` | Suscripción de `az account show --query id -o tsv` |
-| `AZURE_RESOURCE_GROUP` | Grupo exclusivo de la empresa, por ejemplo `rg-intranet-ejemplo` |
-| `AZURE_APP_NAME` | Nombre globalmente único del App Service |
-| `AZURE_PLAN_NAME` | Nombre del plan de esta instalación |
-| `AZURE_KEY_VAULT_NAME` | Nombre globalmente único del Key Vault (3–24 caracteres) |
-| `INTRANET_APPLICATION_NAME` | Nombre visible de la intranet |
-| `INTRANET_COMPANY_NAME` | Nombre de la empresa |
+| `AZURE_RESOURCE_GROUP` | Grupo que contiene el App Service |
+| `AZURE_APP_NAME` | Nombre del App Service de la plantilla |
+| `AZURE_REGISTRY_SERVER` | Host ACR, por ejemplo `acrintranet.azurecr.io` |
+| `AZURE_CLIENT_ID` | Client ID de la identidad OIDC |
+| `AZURE_TENANT_ID` | Tenant ID de Entra |
+| `AZURE_SUBSCRIPTION_ID` | Subscription ID de Azure |
+| `ACR_USERNAME` (secret) | Nombre del token ACR de escritura limitado a `intranet` |
+| `ACR_PASSWORD` (secret) | Contraseña nueva de ese token |
 
-Son identificadores y nombres visibles, no contraseñas. No se usa
-`AZURE_PUBLISH_PROFILE`; retirar el perfil antiguo de GitHub tras una migración.
-Configurar las mismas variables en la terminal para aprovisionamientos manuales.
-Adaptar `location` en el fichero de parámetros si se elige otra región.
+Para el aprovisionamiento inicial, define también `AZURE_PLAN_NAME`,
+`AZURE_KEY_VAULT_NAME`, `AZURE_REGISTRY_NAME`, `AZURE_CONNECTION_SECRET_NAME`,
+`AZURE_REGISTRY_PULL_TOKEN_NAME` y `AZURE_REGISTRY_PULL_SECRET_NAME`. Estos son valores
+para Bicep, no se usan en CD. No guardar secretos ACR en variables ni en Git. No se usa
+`AZURE_PUBLISH_PROFILE`.
 
 ## 3. Secretos y primer aprovisionamiento
 
-No introducir connection strings en Bicep, parámetros, workflows ni imágenes.
-El secreto requerido es `ConnectionStrings--IMtemplate` en el vault de esta empresa.
-El vault nuevo no hereda secretos de otra instalación: cargarlos de forma
-segura antes de validar el arranque. La base de datos sigue siendo externa; elegir
-explícitamente la conexión de destino antes de cargar el secreto.
+No introducir connection strings, tokens ni contraseñas en Bicep, parámetros,
+workflows ni imágenes. Para esta validación, crear en el Key Vault compartido un secreto
+nuevo llamado `ConnectionStrings--IntranetTemplate`; su valor debe ser una conexión a
+la base Supabase de prueba e incluir `Search Path=<esquema_dedicado>`. Usar un rol de base
+de datos exclusivo para la plantilla, con permisos solo sobre ese esquema: `Search Path`
+selecciona dónde resolver nombres, pero no restringe el acceso a otros esquemas. No usar
+un rol privilegiado compartido ni reutilizar `ConnectionStrings--IMtemplate` o secretos de
+MemByte. Verificar `select current_schema()` y el usuario conectado antes de migrar.
 
-Para un entorno nuevo, crear primero el registro y publicar una imagen real:
+Para instalaciones cliente nuevas, crear primero un grupo propio y aprovisionar sus
+recursos de apoyo. **No ejecutar este bootstrap en el grupo compartido con MemByte.**
+La validación ya tiene plan, ACR y Key Vault existentes; no los aprovisiona ni actualiza.
 
 ```powershell
-az deployment group create --resource-group $rg --name container-registry --template-file infra\registry.bicep
-$acr = az deployment group show --resource-group $rg --name container-registry --query properties.outputs.registryName.value -o tsv
-$server = az deployment group show --resource-group $rg --name container-registry --query properties.outputs.loginServer.value -o tsv
-$tag = git rev-parse HEAD
-az acr login --name $acr
-docker build --platform linux/amd64 --tag "${server}/intranet:${tag}" .
-docker push "${server}/intranet:${tag}"
-
-az deployment group what-if --resource-group $rg --template-file infra\main.bicep --parameters infra\production.bicepparam imageTag=$tag registryName=$acr
-az deployment group create --resource-group $rg --name initial-app --template-file infra\main.bicep --parameters infra\production.bicepparam imageTag=$tag registryName=$acr
+$env:AZURE_PLAN_NAME = "<plan-propio>"
+$env:AZURE_KEY_VAULT_NAME = "<vault-propio>"
+$env:AZURE_REGISTRY_NAME = "<acr-propio>"
+az deployment group create --resource-group $rg --name support-resources `
+    --template-file infra\bootstrap.bicep `
+    --parameters planName=$env:AZURE_PLAN_NAME keyVaultName=$env:AZURE_KEY_VAULT_NAME `
+        registryName=$env:AZURE_REGISTRY_NAME planSku=B1
 ```
 
-Revisar el resultado y detenerse ante errores; nunca desplegar el tag de ejemplo
-`bootstrap`. La identidad humana necesita `AcrPush` para publicar manualmente.
-En un entorno nuevo la app no podrá completar el arranque hasta cargar la conexión:
+Crear dos tokens ACR limitados al repositorio `intranet`: `template-intranet-pull`
+(solo lectura) y `template-intranet-push` (lectura/escritura). Son credenciales nuevas;
+no reutilizar tokens de MemByte.
 
-1. Asignar al operador `Key Vault Secrets Officer` solo sobre el vault recién creado:
-   ```powershell
-   $vaultId = az keyvault show --name $env:AZURE_KEY_VAULT_NAME --resource-group $rg --query id -o tsv
-   $me = az ad signed-in-user show --query id -o tsv
-   az role assignment create --assignee-object-id $me --assignee-principal-type User --role "Key Vault Secrets Officer" --scope $vaultId
-   ```
-2. Esperar la propagación RBAC y crear `ConnectionStrings--IMtemplate` en el Portal de
-   Key Vault con la conexión Npgsql de Supabase, usando SSL y validación de certificado.
-   Obtener host/puerto/database/usuario/contraseña desde Supabase → Project Settings
-   → Database → Connection string (session pooler si la red no admite la conexión directa).
-   No pegar el valor en el historial de la terminal ni imprimirlo en CI.
-3. Si se usan adjuntos Azure Blob, guardar su conexión en otro secreto y configurar
-   `attachmentConnectionSecretName` en `production.bicepparam`. Sin ese parámetro se
-   usa `/home/.messaging-attachments`, almacenamiento privado persistente del sitio.
-4. Aplicar las migraciones EF Core mediante el procedimiento operativo existente,
-   con copia de seguridad previa. La imagen Production no migra ni siembra usuarios.
-5. Reiniciar el sitio después de cargar los secretos y verificar que las referencias
-   Key Vault figuren como resueltas en App Service → Environment variables.
+```powershell
+az acr token create --name template-intranet-pull --registry $env:AZURE_REGISTRY_NAME `
+    --repository intranet content/read metadata/read --no-passwords true
+az acr token create --name template-intranet-push --registry $env:AZURE_REGISTRY_NAME `
+    --repository intranet content/read content/write metadata/read metadata/write --no-passwords true
+$pullPassword = az acr token credential generate --name template-intranet-pull `
+    --registry $env:AZURE_REGISTRY_NAME --password1 --query 'passwords[0].value' --output tsv
+$pushPassword = az acr token credential generate --name template-intranet-push `
+    --registry $env:AZURE_REGISTRY_NAME --password1 --query 'passwords[0].value' --output tsv
+az keyvault secret set --vault-name $env:AZURE_KEY_VAULT_NAME --name TemplateAcrPullPassword `
+    --value $pullPassword --output none
+gh secret set ACR_USERNAME --env production --body "template-intranet-push"
+gh secret set ACR_PASSWORD --env production --body $pushPassword
+Remove-Variable pullPassword, pushPassword
+```
 
-Los valores se resuelven mediante referencias `@Microsoft.KeyVault(...)`, no por
-`KeyVaultName` (la aplicación actual no carga automáticamente ese setting).
-Un secreto ausente o un permiso incorrecto impide el arranque: corregirlo, no sustituir
-la conexión por un valor de prueba. RBAC y la caché de referencias pueden tardar
+Las contraseñas se capturan en variables y no deben imprimirse ni guardarse en archivos.
+Crear `ConnectionStrings--IntranetTemplate` en Key Vault con la conexión Npgsql a Supabase,
+SSL y `Search Path=<esquema_dedicado>`. Antes de migrar, comprobar en una conexión de esa
+configuración que `select current_schema()` devuelve el esquema dedicado y no `public`.
+
+Publicar una imagen y aprovisionar la app una vez. En validación, usar los recursos
+existentes; no ejecutar `bootstrap.bicep`. Para clientes nuevos, ejecutar el bootstrap
+en su grupo propio antes de estos pasos:
+
+```powershell
+$tag = git rev-parse HEAD
+$server = "<acr>.azurecr.io"
+docker login $server --username template-intranet-push
+# Introducir la contraseña del token cuando Docker la solicite.
+docker build --platform linux/amd64 --tag "${server}/intranet:${tag}" .
+docker push "${server}/intranet:${tag}"
+docker logout $server
+az deployment group what-if --resource-group $rg --template-file infra\main.bicep `
+    --parameters infra\production.bicepparam imageTag=$tag
+az deployment group create --resource-group $rg --name initial-app --template-file infra\main.bicep `
+    --parameters infra\production.bicepparam imageTag=$tag
+```
+
+Revisar el `what-if`: `main.bicep` debe crear solo la app, una identidad de ejecución
+nueva y asignaciones RBAC sobre los secretos concretos; plan, ACR y Key Vault deben
+aparecer como existentes sin cambios. La identidad de la app solo puede leer su secreto
+de conexión, el secreto del token ACR de lectura y, si aplica, el secreto de adjuntos.
+La app no migra ni siembra usuarios; aplicar las migraciones únicamente al esquema
+indicado por `Search Path`, con copia de seguridad previa. Verificar que todas las
+referencias Key Vault estén resueltas antes de arrancar la app.
+
+Los valores se resuelven mediante referencias `@Microsoft.KeyVault(...)`. Un secreto
+ausente o un permiso incorrecto impide el arranque: corregirlo, no usar valores de prueba
+ni dar acceso de lectura al vault completo. RBAC y la caché de referencias pueden tardar
 en propagarse; reiniciar o refrescar las referencias tras corregirlos.
 
 ## 4. Migrar el sitio existente desde ZIP
@@ -211,8 +236,8 @@ si se decide conservar explícitamente el sitio y su región originales:
    Conservar también el identificador `DataProtection__ApplicationName` anterior si
    se necesita preservar cookies y tokens. Bicep usa por defecto el nombre del sitio;
    cambiar ese identificador invalida sesiones. Nunca compartir claves entre empresas.
-5. Aplicar `what-if`, comprobar que actualiza el sitio/plan/vault esperados y desplegar
-   una imagen existente como en la sección 3, o iniciar CD manualmente después de CI.
+5. Aplicar `what-if` y comprobar que el despliegue modifica solo el App Service; plan,
+   ACR y Key Vault deben permanecer como recursos existentes sin cambios.
 6. Confirmar `/health`, `/login`, CSS/JS, login/MFA, carga/descarga de adjuntos y conexión
    Blazor/SignalR. Comprobar que cookies y adjuntos sobreviven a un reinicio.
 7. Eliminar el perfil de publicación antiguo. El script `scripts/create-publish-zip.ps1`
@@ -235,31 +260,23 @@ consultas a PostgreSQL ni sustituye las comprobaciones funcionales de login.
 `cd.yml` solo se inicia mediante `workflow_dispatch`, no automáticamente tras CI ni
 al integrar una PR. Después de integrar el workflow en `master`, abrir
 **Actions → CD — Deploy container to Azure → Run workflow**, seleccionar **master**
-y confirmar únicamente cuando el entorno esté preparado para desplegar.
-El job rechaza otras ramas y hace checkout del SHA de la ejecución manual.
-Antes de autenticarse en Azure, comprueba que ese SHA sigue siendo el actual de
-`master` y consulta la API de Actions con permiso `actions: read`: la última ejecución
-de `ci.yml` para un push de ese SHA, rama y repositorio debe estar completada con
-conclusión `success`. CI ausente, pendiente, fallido o cancelado bloquea el despliegue;
-esperar o corregir CI e iniciar de nuevo el workflow. No se aceptan ejecuciones de PR.
-Después autentica con OIDC, exige las variables de la instalación antes de aprovisionar
-ACR, publica `intranet:<SHA>`, aplica Bicep
-y espera una respuesta correcta de `/health`. No hay tag `latest`.
+y confirmar únicamente cuando la app esté preparada. El job rechaza otras ramas y
+hace checkout del SHA de la ejecución manual. Antes de autenticarse en Azure, comprueba
+que ese SHA sigue siendo el actual de `master` y consulta la API de Actions con permiso
+`actions: read`: el último CI de push para ese SHA, rama y repositorio debe terminar en
+`success`. CI ausente, pendiente, fallido o cancelado bloquea el despliegue; no se aceptan
+CI de PR. Luego publica `intranet:<SHA>` con el token ACR limitado al repositorio y usa
+OIDC, con `Website Contributor` solo en la app, para cambiar su imagen y verificar
+`/health`. CD no aprovisiona ni actualiza el grupo, plan, ACR, vault o asignaciones RBAC.
+No hay tag `latest`.
 Si `master` ha avanzado mientras el inicio manual estaba pendiente, el job rechaza
 el SHA obsoleto antes de acceder a Azure para evitar desplegarlo fuera de orden.
-Los despliegues al entorno se serializan para no interrumpir una aplicación Bicep
-en curso. No borrar imágenes referenciadas por sitios o necesarias para rollback.
+Los despliegues a la app se serializan para evitar cambios simultáneos de imagen.
+No borrar imágenes referenciadas por sitios o necesarias para rollback.
 
-Para restaurar una imagen anterior, identificar un SHA de CI correcto que siga
-existiendo en ACR, revisar `what-if` y reaplicar la plantilla con ese tag:
-
-```powershell
-$stableTag = "<SHA_ESTABLE>"
-az deployment group what-if --resource-group $rg --template-file infra\main.bicep --parameters infra\production.bicepparam imageTag=$stableTag registryName=$acr
-az deployment group create --resource-group $rg --name rollback --template-file infra\main.bicep --parameters infra\production.bicepparam imageTag=$stableTag registryName=$acr
-```
-
-Esto revierte la imagen, no la infraestructura del fichero actual ni el esquema.
+Para restaurar una imagen anterior, iniciar CD con un SHA de CI correcto que siga
+existiendo en ACR y que pertenezca a `master`. La restauración cambia solo la imagen
+configurada en la app; no toca recursos compartidos ni el esquema.
 Para revertir también código/infraestructura de forma duradera, hacer `git revert`
 del cambio en `master`, esperar a que CI termine correctamente e iniciar CD manualmente
 para publicar el nuevo SHA.
@@ -270,6 +287,7 @@ y recuperación de datos antes de aplicar migraciones destructivas.
 
 ```powershell
 az bicep build --file infra\main.bicep --stdout
+az bicep build --file infra\bootstrap.bicep --stdout
 az bicep build --file infra\registry.bicep --stdout
 az bicep build-params --file infra\production.bicepparam --stdout
 docker build --tag intranet:local .
@@ -285,8 +303,9 @@ docker run --rm --publish 8080:8080 --env ConnectionStrings__IMtemplate --volume
   no sustituirlo por una copia exclusiva de los `.csproj`. Reconstruir y desplegar la
   imagen corregida; no descargar manualmente el script ni deshabilitar su fingerprint.
   Comprobar los assets de la página con `python scripts\smoke-test-web-assets.py <URL>`.
-- **Image pull no autorizado:** comprobar `AcrPull`, identidad de ejecución,
-  `acrUseManagedIdentityCreds` y propagación RBAC; no habilitar el admin de ACR.
+- **Image pull no autorizado:** comprobar que el token pull del repositorio `intranet`
+  está en el secreto Key Vault indicado, que la identidad de runtime solo tiene lectura
+  sobre ese secreto y que la referencia se resolvió; no habilitar el admin de ACR.
 - **Contenedor no responde:** confirmar puerto 8080, logs de contenedor y referencia
   de conexión resuelta; no usar `ASPNETCORE_URLS` que fuerce otro puerto.
 - **Redirecciones HTTPS:** App Service termina TLS; Bicep habilita forwarded headers

@@ -5,7 +5,10 @@ Base reutilizable para crear una intranet independiente para cualquier empresa.
 Esta plantilla, desarrollada por MemByte, está separada de su intranet interna.
 Cada empresa obtiene su propio repositorio, configuración, base de datos, usuarios
 y recursos de despliegue. No es un servicio multiempresa con datos compartidos.
-No se deben reutilizar datos, secretos ni recursos de la instalación de MemByte.
+La validación de esta plantilla es una excepción temporal: usa otra app, un esquema
+Supabase y secretos propios, aunque comparte el grupo de recursos, plan, ACR y Key Vault.
+No reutiliza datos ni secretos de MemByte. Las instalaciones de clientes nunca comparten
+recursos de producción.
 
 ## Stack
 
@@ -39,11 +42,11 @@ no módulos implementados por esta conversión a plantilla.
 ## Puesta en marcha
 
 ```powershell
-dotnet build
-dotnet test
+dotnet build IM-template.slnx
+dotnet test IM-template.slnx
 ```
 
-Abre `MemByte-IM.slnx` en Visual Studio y establece `MemByte.Web` como proyecto de inicio.
+Abre `IM-template.slnx` en Visual Studio y establece `MemByte.Web` como proyecto de inicio.
 Los nombres técnicos `MemByte.*` se conservan para no modificar ensamblados ni migraciones;
 no determinan la identidad visible de la empresa.
 
@@ -103,22 +106,31 @@ configuración de un cliente ni garantizan que todas las capacidades estén impl
 
 ## Despliegue en Azure
 
-La infraestructura se declara en [`infra/main.bicep`](./infra/main.bicep): App Service Linux
-(B1 por defecto), Azure Container Registry privado, Key Vault con RBAC e identidad
-administrada, Log Analytics y Application Insights. PostgreSQL/Supabase se mantiene externo.
-Los nombres de App Service, plan y Key Vault se obtienen de las variables del entorno
-`production`: `AZURE_APP_NAME`, `AZURE_PLAN_NAME` y `AZURE_KEY_VAULT_NAME`.
-Configura también `AZURE_RESOURCE_GROUP`, la identidad OIDC y los nombres visibles
-`INTRANET_APPLICATION_NAME` e `INTRANET_COMPANY_NAME` para cada empresa.
-El despliegue se bloquea si faltan estos valores. Los nombres de ejemplo del fichero
+`infra/bootstrap.bicep` crea el plan, ACR y Key Vault de una instalación nueva;
+`infra/main.bicep` referencia esos recursos existentes y solo crea la app y una identidad
+de ejecución exclusiva. CD no aprovisiona ni actualiza recursos compartidos: publica
+la imagen `intranet` con un token ACR limitado a ese repositorio y cambia la imagen de
+la app existente. PostgreSQL/Supabase se mantiene externo. La validación de esta plantilla
+reutiliza el grupo, plan, ACR y Key Vault de MemByte; sus secretos y esquema Supabase
+son distintos. Cada cliente debe crear un grupo y recursos propios.
+Configura `AZURE_RESOURCE_GROUP`, `AZURE_APP_NAME`, `AZURE_REGISTRY_SERVER`, identidad
+OIDC con permisos solo sobre la app y los nombres visibles `INTRANET_APPLICATION_NAME`
+e `INTRANET_COMPANY_NAME` para el aprovisionamiento inicial. CD requiere además los
+secretos de entorno `ACR_USERNAME` y `ACR_PASSWORD`, correspondientes al token limitado
+al repositorio `intranet`. Los nombres de ejemplo del fichero
 de parámetros solo permiten validación en CI; no son destinos de producción.
 La región de ejemplo es Spain Central (`spaincentral`); adáptala antes del bootstrap.
 
 El `Dockerfile` multietapa publica .NET 10 y ejecuta la aplicación como usuario no root
 en el puerto 8080. El despliegue se inicia manualmente desde GitHub Actions con
 **Run workflow** en `master`; exige que el último CI de ese commit haya terminado
-correctamente. Publica una imagen etiquetada con el SHA y aplica Bicep mediante OIDC,
-sin perfiles de publicación ni contraseñas de Azure.
+correctamente. Publica una imagen etiquetada con el SHA y actualiza únicamente la app
+existente mediante OIDC; no ejecuta Bicep ni modifica el grupo, plan, ACR o Key Vault.
+El token de lectura de la app se guarda como secreto individual del Key Vault, y la
+cadena de conexión debe establecer `Search Path` al esquema Supabase de prueba. El rol
+PostgreSQL de la aplicación debe tener permisos solo sobre ese esquema, ya que `Search Path`
+no restringe el acceso a otros esquemas. La identidad OIDC tiene permisos solo sobre la app;
+el token ACR de escritura está limitado al repositorio `intranet`.
 
 Consulta el [runbook de Azure](./planes-de-desarrollo/02-runbook-despliegue-azure.md)
 para configurar OIDC, secretos, migrar el despliegue ZIP existente y hacer rollback.

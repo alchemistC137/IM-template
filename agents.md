@@ -14,6 +14,10 @@ Cada empresa dispone de una instalación independiente con identidad configurabl
 base de datos, usuarios, secretos, adjuntos y recursos propios. No hay aislamiento
 multiempresa dentro de una misma base de datos: no compartir instalaciones entre
 empresas. La entidad de negocio `Client` no representa al propietario de la intranet.
+La validación de esta plantilla es una excepción temporal de infraestructura: comparte
+con MemByte el grupo de recursos, plan, ACR y Key Vault, pero no la app, la identidad
+de ejecución, los secretos ni el esquema Supabase. Esta excepción no se traslada a
+repositorios ni instalaciones de clientes.
 
 La sección `Intranet` configura `ApplicationName` y `CompanyName`; no concede
 permisos. La plantilla no incluye credenciales administrativas ni datos de una empresa.
