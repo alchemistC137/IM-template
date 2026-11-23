@@ -10,11 +10,11 @@
 | Recurso | Declaración y propósito |
 |---|---|
 | ACR Basic | `infra/registry.bicep`, registro privado sin usuario administrador; imágenes `intranet:<commit-sha>`. |
-| App Service Plan Linux | `infra/main.bicep`, B1 por defecto, una instancia; F1 ya no se utiliza. B1, ACR y telemetría tienen coste. Revisar presupuesto y cuotas antes de aplicar. |
+| App Service Plan Linux | `infra/main.bicep`, B1 por defecto, una instancia; F1 ya no se utiliza. B1 y ACR tienen coste; telemetría/App Insights es opcional y tiene coste cuando se activa. Revisar presupuesto y cuotas antes de aplicar. |
 | App Service | Docker Linux/amd64, puerto 8080, HTTPS obligatorio, TLS 1.2+, WebSockets y afinidad para Blazor Server. FTP y publicación básica SCM deshabilitados. |
 | Identidad administrada de ejecución | `<appName>-runtime`, `AcrPull` solo sobre ACR y `Key Vault Secrets User` solo sobre el vault; sin claves de registro. También se conserva la identidad de sistema del sitio existente. |
 | Key Vault | RBAC y soft delete; secretos cargados por operadores fuera de Bicep. App Service resuelve las referencias con la identidad de ejecución. |
-| Log Analytics / Application Insights | Workspace con retención de 30 días y telemetría de aplicación; conexión en `ApplicationInsights__ConnectionString`. |
+| Log Analytics / Application Insights — **opcional, no despliegue por defecto** | No se crea en el flujo actual. Si se reactiva: workspace con retención de 30 días y telemetría de aplicación; conexión en `ApplicationInsights__ConnectionString`. Implementación a re-añadir en `infra/main.bicep`: recurso `Microsoft.Insights/components`, `WorkspaceResourceId` sobre el workspace `Microsoft.OperationalInsights/workspaces` y setting `ApplicationInsights__ConnectionString` en la sección `settings`. |
 | PostgreSQL / Supabase | No se crea ni modifica con esta plantilla. Migraciones y cuentas de producción se gestionan por separado. |
 
 `infra/production.bicepparam` toma los nombres de recursos de las variables de entorno
@@ -25,7 +25,8 @@ e `INTRANET_COMPANY_NAME`, que se aplican a la configuración visible de la intr
 El registro ACR se aprovisiona en la ubicación del grupo y su nombre se deriva de
 forma estable del ID del grupo. Mantener el grupo en Spain Central para que coincidan.
 Antes de aplicar, comprobar disponibilidad regional y cuota de B1 Linux, ACR y
-telemetría, además de la disponibilidad global de los nombres del sitio y del vault.
+telemetría/App Insights (si se habilita), además de la disponibilidad global de los
+nombres del sitio y del vault.
 Estos nombres no se han reservado ni se ha comprobado su disponibilidad en Azure.
 Cada empresa debe tener su propio grupo, base de datos, identidades y secretos.
 No apuntar a recursos de MemByte ni de otros clientes. Esta plantilla no migra
@@ -64,6 +65,8 @@ $env:INTRANET_COMPANY_NAME = "Empresa de ejemplo"
 az group create --name $rg --location $location
 
 # Una vez por suscripción. Esperar a registrationState = Registered.
+# Microsoft.OperationalInsights / Microsoft.Insights solo son necesarios si se habilita
+# telemetría/App Insights (opcional, no despliegue por defecto).
 foreach ($provider in @("Microsoft.Web", "Microsoft.ContainerRegistry", "Microsoft.KeyVault", "Microsoft.ManagedIdentity", "Microsoft.OperationalInsights", "Microsoft.Insights")) {
     az provider register --namespace $provider --wait
 }
@@ -136,7 +139,7 @@ Adaptar `location` en el fichero de parámetros si se elige otra región.
 ## 3. Secretos y primer aprovisionamiento
 
 No introducir connection strings en Bicep, parámetros, workflows ni imágenes.
-El secreto requerido es `ConnectionStrings--Default` en el vault de esta empresa.
+El secreto requerido es `ConnectionStrings--IMtemplate` en el vault de esta empresa.
 El vault nuevo no hereda secretos de otra instalación: cargarlos de forma
 segura antes de validar el arranque. La base de datos sigue siendo externa; elegir
 explícitamente la conexión de destino antes de cargar el secreto.
@@ -166,7 +169,7 @@ En un entorno nuevo la app no podrá completar el arranque hasta cargar la conex
    $me = az ad signed-in-user show --query id -o tsv
    az role assignment create --assignee-object-id $me --assignee-principal-type User --role "Key Vault Secrets Officer" --scope $vaultId
    ```
-2. Esperar la propagación RBAC y crear `ConnectionStrings--Default` en el Portal de
+2. Esperar la propagación RBAC y crear `ConnectionStrings--IMtemplate` en el Portal de
    Key Vault con la conexión Npgsql de Supabase, usando SSL y validación de certificado.
    Obtener host/puerto/database/usuario/contraseña desde Supabase → Project Settings
    → Database → Connection string (session pooler si la red no admite la conexión directa).
@@ -272,7 +275,7 @@ az bicep build-params --file infra\production.bicepparam --stdout
 docker build --tag intranet:local .
 # Usar una conexión de pruebas en una variable de entorno local, nunca en la imagen.
 # El montaje conserva claves y adjuntos entre recreaciones del contenedor.
-docker run --rm --publish 8080:8080 --env ConnectionStrings__Default --volume intranet-ejemplo-home:/home intranet:local
+docker run --rm --publish 8080:8080 --env ConnectionStrings__IMtemplate --volume intranet-ejemplo-home:/home intranet:local
 ```
 
 - **Docker no conecta:** arrancar Docker Desktop con motor Linux antes de construir.
@@ -295,10 +298,18 @@ docker run --rm --publish 8080:8080 --env ConnectionStrings__Default --volume in
 
 ## 7. Telemetría, alertas y rollout
 
+**Opcional:** la telemetría de App Insights no se despliega por defecto. `Program.cs`
+solo registra `AddApplicationInsightsTelemetry` si hay una cadena en
+`ApplicationInsights:ConnectionString` (equivalente a `APPLICATIONINSIGHTS_CONNECTION_STRING`
+si se habilita App Insights más adelante), así que la app arranca sin telemetría y
+`ISecurityTelemetryPublisher` sigue emitiendo los logs estructurados (no llegan a
+Application Insights).
+
 Los eventos `AuthAuditEntry` siguen persistiendo en PostgreSQL y publicándose mediante
-`ISecurityTelemetryPublisher`. Bicep conecta Application Insights usando la clave
-que realmente consulta `Program.cs`, `ApplicationInsights:ConnectionString`.
-Las alertas requieren un action group/canal operativo y se configuran aparte:
+`ISecurityTelemetryPublisher`. Si se habilita App Insights, Bicep conecta el sitio con la
+clave que realmente consulta `Program.cs`, `ApplicationInsights:ConnectionString`.
+Las alertas requieren un action group/canal operativo y se configuran aparte (válidas
+solo con App Insights habilitado; se basan en las consultas KQL de `traces`):
 
 | Alerta | Consulta KQL orientativa (`traces`) | Umbral |
 |---|---|---|

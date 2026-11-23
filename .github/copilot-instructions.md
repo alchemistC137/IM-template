@@ -42,7 +42,7 @@
 
 - Nada de cadenas de conexión, claves ni credenciales en `appsettings.json` ni en código fuente.
 - Desarrollo: `dotnet user-secrets` (propios por instalación; desactivar tras el primer arranque). Producción: Key Vault + Managed Identity; el arranque falla rápido si falta la cadena (`ConnectionStrings:IMtemplate`).
-- **Discrepancia observada:** el comentario y el mensaje de error de `Program.cs` dicen `ConnectionStrings:Default`, pero el código ejecuta `GetConnectionString("IMtemplate")`; la clave efectiva es `ConnectionStrings:IMtemplate`. Al personalizar: setear `IMtemplate` y comprobar que no haya clave `ConnectionStrings:Default` olvidada en secrets.
+- **Clave efectiva:** `Program.cs` lee `GetConnectionString("IMtemplate")` → `ConnectionStrings:IMtemplate` (env var `ConnectionStrings__IMtemplate` → vault secret `ConnectionStrings--IMtemplate`). Al personalizar: setear `IMtemplate` y comprobar que no haya clave `ConnectionStrings:Default`/`ConnectionStrings--Default` olvidada en secrets.
 - Data Protection: claves persistidas fuera de memoria (prod: `/home/.dataprotection-keys`; local: dentro del ContentRootPath); `DataProtection:ApplicationName` estable por instalación — cambiarlo invalida cookies y tokens existentes.
 
 ### 3.3 Cabeceras y transporte

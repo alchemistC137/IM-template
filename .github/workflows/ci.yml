@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           docker run --detach --name membyte-ci --publish 127.0.0.1:8080:8080 \
             --volume membyte-ci-home:/home \
-            --env 'ConnectionStrings__Default=Host=localhost;Database=smoke;Username=smoke;Password=smoke' \
+            --env 'ConnectionStrings__IMtemplate=Host=localhost;Database=smoke;Username=smoke;Password=smoke' \
             --env ASPNETCORE_FORWARDEDHEADERS_ENABLED=true membyte-im:ci
           trap 'docker logs membyte-ci; docker rm --force membyte-ci; docker volume rm membyte-ci-home' EXIT
           curl --fail --silent --show-error --retry 15 --retry-delay 2 \

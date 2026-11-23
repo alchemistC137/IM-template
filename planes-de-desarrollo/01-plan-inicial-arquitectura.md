@@ -401,13 +401,13 @@ public interface IRealtimeNotificationService
 // ❌ PROHIBIDO en cualquier entorno
 {
   "ConnectionStrings": {
-    "Default": "Server=myserver;Database=mydb;******"
+    "IMtemplate": "Server=myserver;Database=mydb;******"
   }
 }
 
 // ✅ Desarrollo: dotnet user-secrets
 // dotnet user-secrets init
-// dotnet user-secrets set "ConnectionStrings:Default" "Server=...;******"
+// dotnet user-secrets set "ConnectionStrings:IMtemplate" "Server=...;******"
 // Almacenado en %APPDATA%\Microsoft\UserSecrets\<id>\secrets.json (fuera del repo)
 
 // ✅ Producción: Azure Key Vault + Managed Identity (sin contraseñas en config)
@@ -679,10 +679,10 @@ Añadir un nuevo módulo (e.g., **Gestión de Vacaciones**) requiere:
 | **App Service (Linux)** | B1 (1 vCore, 1.75 GB RAM) | ~$13 | Linux ~35 % más barato que Windows; ideal para arranque. Escalar a B2/B3 según carga. |
 | **Azure SQL Database** | Basic (5 DTU) o Serverless (0.5–2 vCores) | $5–$15 | Basic para MVP; Serverless para producción con autopausa en horas sin uso. |
 | **Azure Key Vault** | Standard | ~$0.03/10 000 operaciones | Coste prácticamente nulo en desarrollo. |
-| **Azure Application Insights** | Pay-as-you-go | ~$0–5 | Primeros 5 GB/mes gratuitos. |
+| **Azure Application Insights — opcional** | Pay-as-you-go | ~$0–5 | No se despliega por defecto; primeros 5 GB/mes gratuitos si se activa. Ver runbook §1 y §7. |
 | **Azure AD (Entra ID)** | Free tier | $0 | Hasta 50 000 MAU gratuitos; P1 a $6/usuario/mes si se requiere Conditional Access. |
 | **GitHub Actions** | Free (public) / $0.008/min (private) | ~$0–10 | Repositorios privados: 2 000 min/mes gratuitos. |
-| **Total estimado (arranque)** | | **~$28–$43/mes** | Sin contar Azure AD P1 ni Supabase |
+| **Total estimado (arranque)** | | **~$28–$43/mes** | Sin contar Azure AD P1 ni Supabase. App Insights es opcional: +~$0–5/mes si se activa; sin él no se incluye en el total. |
 
 **Alternativa con Supabase (base de datos):**
 
@@ -846,7 +846,7 @@ cd src/MemByte.Web
 dotnet user-secrets init
 
 # Configurar la cadena de conexión (NUNCA en appsettings.json)
-dotnet user-secrets set "ConnectionStrings:Default" \
+dotnet user-secrets set "ConnectionStrings:IMtemplate" \
   "Host=localhost;Database=membyte_dev;Username=postgres;******"
 
 # Verificar que los secretos están configurados
@@ -977,7 +977,7 @@ az keyvault set-policy \
 # Almacenar connection string en Key Vault (nunca en variables de entorno de App Service)
 az keyvault secret set \
   --vault-name $KEY_VAULT \
-  --name "ConnectionStrings--Default" \
+  --name "ConnectionStrings--IMtemplate" \
   --value "Server=$SQL_SERVER.database.windows.net;Database=$SQL_DB;..."
 
 # Configurar el nombre del Key Vault como variable de entorno (no sensible)

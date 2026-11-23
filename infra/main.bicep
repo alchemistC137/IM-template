@@ -8,7 +8,7 @@ param planName string
 @maxLength(24)
 param keyVaultName string
 
-param registryName string = 'acrintranet${uniqueString(resourceGroup().id)}'
+param registryName string = 'acrmembyte${uniqueString(resourceGroup().id)}'
 param imageRepository string = 'intranet'
 
 @minLength(1)
@@ -31,8 +31,6 @@ param imageTag string
   'S2'
   'S3'
   'P1v3'
-  'P2v3'
-  'P3v3'
 ])
 param planSku string = 'B1'
 
@@ -83,27 +81,6 @@ resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     softDeleteRetentionInDays: 90
     accessPolicies: []
     publicNetworkAccess: 'Enabled'
-  }
-}
-
-resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: '${appName}-logs'
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: 30
-  }
-}
-
-resource insights 'Microsoft.Insights/components@2020-02-02' = {
-  name: '${appName}-insights'
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: workspace.id
   }
 }
 
@@ -175,8 +152,7 @@ resource settings 'Microsoft.Web/sites/config@2023-12-01' = {
     ASPNETCORE_FORWARDEDHEADERS_ENABLED: 'true'
     WEBSITES_PORT: '8080'
     WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'true'
-    ConnectionStrings__Default: '@Microsoft.KeyVault(SecretUri=${vault.properties.vaultUri}secrets/ConnectionStrings--Default/)'
-    ApplicationInsights__ConnectionString: insights.properties.ConnectionString
+    ConnectionStrings__IMtemplate: '@Microsoft.KeyVault(SecretUri=${vault.properties.vaultUri}secrets/ConnectionStrings--IMtemplate/)'
     Messaging__AttachmentStorage__LocalRootPath: '/home/.messaging-attachments'
   }, empty(attachmentConnectionSecretName) ? {} : {
     Messaging__AttachmentStorage__ConnectionString: '@Microsoft.KeyVault(SecretUri=${vault.properties.vaultUri}secrets/${attachmentConnectionSecretName}/)'

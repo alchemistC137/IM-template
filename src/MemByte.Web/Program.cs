@@ -81,7 +81,7 @@ builder.Services.AddSingleton<ISecurityTelemetryPublisher, SecurityTelemetryPubl
 
 builder.Services.AddCascadingAuthenticationState();
 
-// La cadena de conexión se busca en "ConnectionStrings:Default": en local
+// La cadena de conexión se busca en "ConnectionStrings:IMtemplate": en local
 // puede venir de appsettings.Development.json (réplica local en Docker) o de
 // los user-secrets del proyecto (por ejemplo, apuntando al pooler de
 // Supabase); en Azure, de las Application Settings/Key Vault configuradas en
