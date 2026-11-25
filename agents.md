@@ -63,6 +63,12 @@ La solución está construida sobre **.NET 10 LTS** y **Blazor**, garantizando u
 - Los pedidos utilizan artículos activos del catálogo único, pero conservan el aislamiento por cliente comercial. Los artículos incluidos en pedidos no pueden borrarse: se desactivan para conservar el historial. Impuestos y condiciones comerciales no alteran los totales ni implementan facturación automática.
 - La migración `SingleInstallationCatalog` solo admite catálogos vacíos, tanto en conversión como en reversión. Si existen datos, requiere una migración de datos específica; no se borran ni se mezclan automáticamente. Cada instalación sigue teniendo base de datos y catálogo independientes.
 
+### Sección MemByte
+
+- `/membyte` es exclusiva de `Admin` y está separada del catálogo y los pedidos de la empresa propietaria de la intranet.
+- Está prevista la consulta de la oferta y los costes de MemByte, los productos y servicios contratados, las solicitudes de alta, cambio y baja y los tickets de soporte. Por ahora la pantalla es informativa: no consulta datos ni envía solicitudes.
+- El cliente HTTP tipado está registrado como punto de integración, pero permanece no disponible: no se han definido rutas, modelos, dirección ni llamadas al API. Antes de habilitarlo hay que acordar el contrato, configurar autenticación Microsoft Entra ID con identidad administrada y garantizar que el API autorice y aísle cada instalación; no reutilizar datos ni credenciales de otra instalación.
+
 ### 1. Administrador (`Admin`)
 
 > Rol de máximo privilegio. Responsable de la configuración global del sistema, la gestión de usuarios y el mantenimiento de la plataforma.

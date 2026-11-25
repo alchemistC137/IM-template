@@ -5,6 +5,7 @@ using MemByte.Application.Orders;
 using MemByte.Application.Clients;
 using MemByte.Application.Employees;
 using MemByte.Application.Messaging;
+using MemByte.Application.MemByteServices;
 using MemByte.Application.Notifications;
 using MemByte.Application.Users;
 using MemByte.Infrastructure.Audit;
@@ -16,6 +17,7 @@ using MemByte.Infrastructure.Employees;
 using MemByte.Infrastructure.Identity;
 using MemByte.Infrastructure.Identity.Seeding;
 using MemByte.Infrastructure.Messaging;
+using MemByte.Infrastructure.MemByteServices;
 using MemByte.Infrastructure.Notifications;
 using MemByte.Infrastructure.Persistence;
 using MemByte.Infrastructure.Users;
@@ -190,6 +192,9 @@ builder.Services.AddScoped<IClientService, ClientService>();
 // propia naturaleza de negocio; el aislamiento se aplica siempre por
 // ClientId, recibido explícitamente en cada operación del servicio.
 builder.Services.AddScoped<ICatalogService, CatalogService>();
+
+// Integración futura con el API externo de MemByte; no realiza peticiones todavía.
+builder.Services.AddHttpClient<IMemByteApiClient, MemByteApiClient>();
 
 // Gestión de pedidos de cada cliente de la plantilla: alta, líneas
 // (referenciando artículos del catálogo), transiciones de estado y pago.

@@ -71,6 +71,14 @@
                         </div>
                     </AuthorizeView>
 
+                    <AuthorizeView Roles="@ApplicationRoleNames.Admin" Context="memByteContext">
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="membyte">
+                                <span class="bi bi-building" aria-hidden="true"></span> MemByte
+                            </NavLink>
+                        </div>
+                    </AuthorizeView>
+
                     <AuthorizeView Roles="@(ApplicationRoleNames.Admin + "," + ApplicationRoleNames.Employee)" Context="ordersContext">
                         <div class="nav-item px-3">
                             <NavLink class="nav-link" href="orders">
