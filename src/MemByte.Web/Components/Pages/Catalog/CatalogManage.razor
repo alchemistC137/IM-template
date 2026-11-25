@@ -1,20 +1,11 @@
-@page "/catalog/{ClientId:guid}"
+@page "/catalog"
 @rendermode InteractiveServer
 @using MemByte.Application.Catalog
-@using MemByte.Application.Clients
 @using MemByte.Infrastructure.Identity
 @attribute [Authorize(Roles = ApplicationRoleNames.Admin)]
 @inject ICatalogService CatalogService
-@inject IClientService ClientService
-@inject NavigationManager NavigationManager
 
-<PageTitle>Catálogo de @(client?.Name ?? "cliente") - @Intranet.Value.ApplicationName</PageTitle>
-
-<div class="mb-3">
-    <a href="/catalog" class="btn btn-outline-secondary btn-sm">
-        <span class="bi bi-arrow-left me-1" aria-hidden="true"></span> Volver a clientes
-    </a>
-</div>
+<PageTitle>Catálogo - @Intranet.Value.ApplicationName</PageTitle>
 
 @if (loading)
 {
@@ -22,23 +13,15 @@
         <span class="spinner-border" role="status" aria-hidden="true"></span>
     </div>
 }
-else if (client is null)
-{
-    <div class="alert alert-warning">
-        <span class="bi bi-exclamation-triangle me-2" aria-hidden="true"></span>
-        Cliente no encontrado.
-    </div>
-}
 else
 {
     <div class="mb-3">
         <h1 class="h4 mb-0">
-            <span class="bi bi-shop me-2" aria-hidden="true"></span>Catálogo de @client.Name
+            <span class="bi bi-shop me-2" aria-hidden="true"></span>Catálogo de productos y servicios
         </h1>
         <p class="text-muted small mb-0">
-            Vista genérica de plantilla: cada cliente adaptará los atributos de sus
-            propios productos y servicios a su naturaleza de negocio (ver
-            <code>src/MemByte.Domain/Catalog/README.md</code>).
+            Gestiona el catálogo único de @Intranet.Value.CompanyName, sus categorías y datos comerciales.
+            Los impuestos son informativos y no modifican los importes de los pedidos.
         </p>
     </div>
 
@@ -201,9 +184,30 @@ else
                                 </select>
                             </div>
                             <div class="mb-2">
-                                <label class="form-label">SKU (opcional)</label>
-                                <InputText class="form-control form-control-sm" @bind-Value="productForm.Sku" />
+                                <label class="form-label">SKU / referencia (opcional)</label>
+                                <InputText class="form-control form-control-sm" maxlength="64" @bind-Value="productForm.Sku" />
                             </div>
+                            <div class="mb-2">
+                                <label class="form-label">Unidad de venta (unidad, caja, kg…)</label>
+                                <InputText class="form-control form-control-sm" maxlength="50" @bind-Value="productForm.UnitOfMeasure" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Impuesto (%) — opcional</label>
+                                <InputNumber class="form-control form-control-sm" step="0.01" @bind-Value="productForm.TaxRate" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Proveedor</label>
+                                <InputText class="form-control form-control-sm" maxlength="200" @bind-Value="productForm.Supplier" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Marca / fabricante</label>
+                                <InputText class="form-control form-control-sm" maxlength="100" @bind-Value="productForm.Brand" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Plazo de entrega (días) — opcional</label>
+                                <InputNumber class="form-control form-control-sm" @bind-Value="productForm.DeliveryDays" />
+                            </div>
+                            <ValidationSummary class="text-danger small" />
                             <div class="mb-3 form-check form-switch">
                                 <InputCheckbox class="form-check-input" @bind-Value="productForm.IsActive" id="productActive" />
                                 <label class="form-check-label" for="productActive">Activo</label>
@@ -249,8 +253,30 @@ else
                                             {
                                                 <span class="text-muted small d-block">SKU: @product.Sku</span>
                                             }
+                                            @if (product.Brand is not null)
+                                            {
+                                                <span class="text-muted small d-block">Marca: @product.Brand</span>
+                                            }
+                                            @if (product.Supplier is not null)
+                                            {
+                                                <span class="text-muted small d-block">Proveedor: @product.Supplier</span>
+                                            }
+                                            @if (product.DeliveryDays.HasValue)
+                                            {
+                                                <span class="text-muted small d-block">Entrega: @product.DeliveryDays días</span>
+                                            }
                                         </td>
-                                        <td>@product.PriceAmount.ToString("0.00") @product.PriceCurrencyCode</td>
+                                        <td>
+                                            @product.PriceAmount.ToString("0.00") @product.PriceCurrencyCode
+                                            @if (product.UnitOfMeasure is not null)
+                                            {
+                                                <span class="text-muted small d-block">Por @product.UnitOfMeasure</span>
+                                            }
+                                            @if (product.TaxRate.HasValue)
+                                            {
+                                                <span class="text-muted small d-block">Impuesto: @product.TaxRate.Value.ToString("0.##") %</span>
+                                            }
+                                        </td>
                                         <td class="small text-muted">@(categories.FirstOrDefault(c => c.Id == product.CategoryId)?.Name ?? "—")</td>
                                         <td>
                                             @if (product.IsActive)
@@ -324,9 +350,34 @@ else
                                 </select>
                             </div>
                             <div class="mb-2">
+                                <label class="form-label">Referencia interna</label>
+                                <InputText class="form-control form-control-sm" maxlength="64" @bind-Value="serviceForm.Reference" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Unidad de facturación (hora, proyecto…)</label>
+                                <InputText class="form-control form-control-sm" maxlength="50" @bind-Value="serviceForm.UnitOfMeasure" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Impuesto (%) — opcional</label>
+                                <InputNumber class="form-control form-control-sm" step="0.01" @bind-Value="serviceForm.TaxRate" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Proveedor / prestador</label>
+                                <InputText class="form-control form-control-sm" maxlength="200" @bind-Value="serviceForm.Supplier" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Modalidad (presencial, remota…)</label>
+                                <InputText class="form-control form-control-sm" maxlength="100" @bind-Value="serviceForm.DeliveryMode" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Periodicidad de facturación (mensual, anual…)</label>
+                                <InputText class="form-control form-control-sm" maxlength="100" @bind-Value="serviceForm.BillingPeriod" />
+                            </div>
+                            <div class="mb-2">
                                 <label class="form-label">Duración (minutos, opcional)</label>
                                 <InputNumber class="form-control form-control-sm" @bind-Value="serviceForm.DurationMinutes" />
                             </div>
+                            <ValidationSummary class="text-danger small" />
                             <div class="mb-2 form-check form-switch">
                                 <InputCheckbox class="form-check-input" @bind-Value="serviceForm.IsRecurring" id="serviceRecurring" />
                                 <label class="form-check-label" for="serviceRecurring">Recurrente (suscripción)</label>
@@ -372,12 +423,42 @@ else
                                     <tr>
                                         <td>
                                             <span class="fw-semibold">@service.Name</span>
+                                            @if (service.Reference is not null)
+                                            {
+                                                <span class="text-muted small d-block">Ref.: @service.Reference</span>
+                                            }
+                                            @if (service.Supplier is not null)
+                                            {
+                                                <span class="text-muted small d-block">Prestador: @service.Supplier</span>
+                                            }
+                                            @if (service.DeliveryMode is not null)
+                                            {
+                                                <span class="text-muted small d-block">Modalidad: @service.DeliveryMode</span>
+                                            }
+                                            @if (service.DurationMinutes.HasValue)
+                                            {
+                                                <span class="text-muted small d-block">Duración: @service.DurationMinutes min</span>
+                                            }
+                                            @if (service.BillingPeriod is not null)
+                                            {
+                                                <span class="text-muted small d-block">Facturación: @service.BillingPeriod</span>
+                                            }
                                             @if (service.IsRecurring)
                                             {
                                                 <span class="badge bg-info-subtle text-info d-block" style="width:fit-content">Recurrente</span>
                                             }
                                         </td>
-                                        <td>@service.PriceAmount.ToString("0.00") @service.PriceCurrencyCode</td>
+                                        <td>
+                                            @service.PriceAmount.ToString("0.00") @service.PriceCurrencyCode
+                                            @if (service.UnitOfMeasure is not null)
+                                            {
+                                                <span class="text-muted small d-block">Por @service.UnitOfMeasure</span>
+                                            }
+                                            @if (service.TaxRate.HasValue)
+                                            {
+                                                <span class="text-muted small d-block">Impuesto: @service.TaxRate.Value.ToString("0.##") %</span>
+                                            }
+                                        </td>
                                         <td class="small text-muted">@(categories.FirstOrDefault(c => c.Id == service.CategoryId)?.Name ?? "—")</td>
                                         <td>
                                             @if (service.IsActive)
@@ -414,9 +495,6 @@ else
 @code {
     private enum Tab { Categories, Products, Services }
 
-    [Parameter] public Guid ClientId { get; set; }
-
-    private ClientDto? client;
     private bool loading = true;
     private Tab activeTab = Tab.Categories;
     private string? feedback;
@@ -438,20 +516,17 @@ else
     private Guid? editingServiceId;
     private bool savingService;
 
-    protected override async Task OnParametersSetAsync()
+    protected override async Task OnInitializedAsync()
     {
-        loading = true;
-        client = await ClientService.GetByIdAsync(ClientId);
-        if (client is not null)
-            await ReloadAllAsync();
+        await ReloadAllAsync();
         loading = false;
     }
 
     private async Task ReloadAllAsync()
     {
-        categories = (await CatalogService.GetCategoriesAsync(ClientId)).ToList();
-        products = (await CatalogService.GetProductsAsync(ClientId)).ToList();
-        services = (await CatalogService.GetServicesAsync(ClientId)).ToList();
+        categories = (await CatalogService.GetCategoriesAsync()).ToList();
+        products = (await CatalogService.GetProductsAsync()).ToList();
+        services = (await CatalogService.GetServicesAsync()).ToList();
     }
 
     private void ShowFeedback(string message, bool isError)
@@ -487,8 +562,8 @@ else
         var parentId = Guid.TryParse(categoryForm.ParentCategoryId, out var parsed) ? parsed : (Guid?)null;
 
         var result = editingCategoryId is null
-            ? await CatalogService.CreateCategoryAsync(ClientId, new CreateCatalogCategoryRequest(categoryForm.Name, parentId, categoryForm.IsActive))
-            : await CatalogService.UpdateCategoryAsync(ClientId, editingCategoryId.Value, new UpdateCatalogCategoryRequest(categoryForm.Name, parentId, categoryForm.IsActive));
+            ? await CatalogService.CreateCategoryAsync(new CreateCatalogCategoryRequest(categoryForm.Name, parentId, categoryForm.IsActive))
+            : await CatalogService.UpdateCategoryAsync(editingCategoryId.Value, new UpdateCatalogCategoryRequest(categoryForm.Name, parentId, categoryForm.IsActive));
 
         savingCategory = false;
 
@@ -506,7 +581,7 @@ else
 
     private async Task DeleteCategory(CatalogCategoryDto category)
     {
-        var result = await CatalogService.DeleteCategoryAsync(ClientId, category.Id);
+        var result = await CatalogService.DeleteCategoryAsync(category.Id);
         if (result.Succeeded)
         {
             ShowFeedback("Categoría eliminada.", isError: false);
@@ -533,7 +608,12 @@ else
             PriceCurrencyCode = product.PriceCurrencyCode,
             CategoryId = product.CategoryId?.ToString() ?? string.Empty,
             Sku = product.Sku ?? string.Empty,
-            IsActive = product.IsActive
+            IsActive = product.IsActive,
+            UnitOfMeasure = product.UnitOfMeasure,
+            TaxRate = product.TaxRate,
+            Supplier = product.Supplier,
+            Brand = product.Brand,
+            DeliveryDays = product.DeliveryDays
         };
     }
 
@@ -550,8 +630,12 @@ else
         var sku = string.IsNullOrWhiteSpace(productForm.Sku) ? null : productForm.Sku;
 
         var result = editingProductId is null
-            ? await CatalogService.CreateProductAsync(ClientId, new CreateProductRequest(productForm.Name, productForm.Description, productForm.PriceAmount, productForm.PriceCurrencyCode, categoryId, sku, productForm.IsActive))
-            : await CatalogService.UpdateProductAsync(ClientId, editingProductId.Value, new UpdateProductRequest(productForm.Name, productForm.Description, productForm.PriceAmount, productForm.PriceCurrencyCode, categoryId, sku, productForm.IsActive));
+            ? await CatalogService.CreateProductAsync(new CreateProductRequest(productForm.Name, productForm.Description,
+                productForm.PriceAmount, productForm.PriceCurrencyCode, categoryId, sku, productForm.IsActive,
+                productForm.UnitOfMeasure, productForm.TaxRate, productForm.Supplier, productForm.Brand, productForm.DeliveryDays))
+            : await CatalogService.UpdateProductAsync(editingProductId.Value, new UpdateProductRequest(productForm.Name, productForm.Description,
+                productForm.PriceAmount, productForm.PriceCurrencyCode, categoryId, sku, productForm.IsActive,
+                productForm.UnitOfMeasure, productForm.TaxRate, productForm.Supplier, productForm.Brand, productForm.DeliveryDays));
 
         savingProduct = false;
 
@@ -569,7 +653,7 @@ else
 
     private async Task ToggleProductActive(ProductDto product)
     {
-        var result = await CatalogService.SetProductActiveAsync(ClientId, product.Id, !product.IsActive);
+        var result = await CatalogService.SetProductActiveAsync(product.Id, !product.IsActive);
         if (!result.Succeeded)
             ShowFeedback(string.Join(" ", result.Errors), isError: true);
         await ReloadAllAsync();
@@ -577,9 +661,10 @@ else
 
     private async Task DeleteProduct(ProductDto product)
     {
-        await CatalogService.DeleteProductAsync(ClientId, product.Id);
-        ShowFeedback("Producto eliminado.", isError: false);
-        await ReloadAllAsync();
+        var result = await CatalogService.DeleteProductAsync(product.Id);
+        ShowFeedback(result.Succeeded ? "Producto eliminado." : string.Join(" ", result.Errors), isError: !result.Succeeded);
+        if (result.Succeeded)
+            await ReloadAllAsync();
     }
 
     // ---------------------------------------------------------------
@@ -598,7 +683,13 @@ else
             CategoryId = service.CategoryId?.ToString() ?? string.Empty,
             DurationMinutes = service.DurationMinutes,
             IsRecurring = service.IsRecurring,
-            IsActive = service.IsActive
+            IsActive = service.IsActive,
+            UnitOfMeasure = service.UnitOfMeasure,
+            TaxRate = service.TaxRate,
+            Supplier = service.Supplier,
+            Reference = service.Reference,
+            DeliveryMode = service.DeliveryMode,
+            BillingPeriod = service.BillingPeriod
         };
     }
 
@@ -614,8 +705,12 @@ else
         var categoryId = Guid.TryParse(serviceForm.CategoryId, out var parsed) ? parsed : (Guid?)null;
 
         var result = editingServiceId is null
-            ? await CatalogService.CreateServiceAsync(ClientId, new CreateServiceRequest(serviceForm.Name, serviceForm.Description, serviceForm.PriceAmount, serviceForm.PriceCurrencyCode, categoryId, serviceForm.DurationMinutes, serviceForm.IsRecurring, serviceForm.IsActive))
-            : await CatalogService.UpdateServiceAsync(ClientId, editingServiceId.Value, new UpdateServiceRequest(serviceForm.Name, serviceForm.Description, serviceForm.PriceAmount, serviceForm.PriceCurrencyCode, categoryId, serviceForm.DurationMinutes, serviceForm.IsRecurring, serviceForm.IsActive));
+            ? await CatalogService.CreateServiceAsync(new CreateServiceRequest(serviceForm.Name, serviceForm.Description,
+                serviceForm.PriceAmount, serviceForm.PriceCurrencyCode, categoryId, serviceForm.DurationMinutes, serviceForm.IsRecurring, serviceForm.IsActive,
+                serviceForm.UnitOfMeasure, serviceForm.TaxRate, serviceForm.Supplier, serviceForm.Reference, serviceForm.DeliveryMode, serviceForm.BillingPeriod))
+            : await CatalogService.UpdateServiceAsync(editingServiceId.Value, new UpdateServiceRequest(serviceForm.Name, serviceForm.Description,
+                serviceForm.PriceAmount, serviceForm.PriceCurrencyCode, categoryId, serviceForm.DurationMinutes, serviceForm.IsRecurring, serviceForm.IsActive,
+                serviceForm.UnitOfMeasure, serviceForm.TaxRate, serviceForm.Supplier, serviceForm.Reference, serviceForm.DeliveryMode, serviceForm.BillingPeriod));
 
         savingService = false;
 
@@ -633,7 +728,7 @@ else
 
     private async Task ToggleServiceActive(ServiceDto service)
     {
-        var result = await CatalogService.SetServiceActiveAsync(ClientId, service.Id, !service.IsActive);
+        var result = await CatalogService.SetServiceActiveAsync(service.Id, !service.IsActive);
         if (!result.Succeeded)
             ShowFeedback(string.Join(" ", result.Errors), isError: true);
         await ReloadAllAsync();
@@ -641,9 +736,10 @@ else
 
     private async Task DeleteService(ServiceDto service)
     {
-        await CatalogService.DeleteServiceAsync(ClientId, service.Id);
-        ShowFeedback("Servicio eliminado.", isError: false);
-        await ReloadAllAsync();
+        var result = await CatalogService.DeleteServiceAsync(service.Id);
+        ShowFeedback(result.Succeeded ? "Servicio eliminado." : string.Join(" ", result.Errors), isError: !result.Succeeded);
+        if (result.Succeeded)
+            await ReloadAllAsync();
     }
 
     private sealed class CategoryFormModel
@@ -657,8 +753,26 @@ else
         public bool IsActive { get; set; } = true;
     }
 
-    private sealed class ProductFormModel
+    private abstract class CommercialFormModel
     {
+        [System.ComponentModel.DataAnnotations.MaxLength(50, ErrorMessage = "La unidad no puede superar 50 caracteres.")]
+        public string? UnitOfMeasure { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "100", ErrorMessage = "El impuesto debe estar entre 0 y 100 %.")]
+        public decimal? TaxRate { get; set; }
+
+        [System.ComponentModel.DataAnnotations.MaxLength(200, ErrorMessage = "El proveedor no puede superar 200 caracteres.")]
+        public string? Supplier { get; set; }
+    }
+
+    private sealed class ProductFormModel : CommercialFormModel
+    {
+        [System.ComponentModel.DataAnnotations.MaxLength(100, ErrorMessage = "La marca no puede superar 100 caracteres.")]
+        public string? Brand { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Range(0, int.MaxValue, ErrorMessage = "El plazo de entrega no puede ser negativo.")]
+        public int? DeliveryDays { get; set; }
+
         [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El nombre es obligatorio.")]
         [System.ComponentModel.DataAnnotations.MaxLength(200)]
         public string Name { get; set; } = string.Empty;
@@ -679,8 +793,17 @@ else
         public bool IsActive { get; set; } = true;
     }
 
-    private sealed class ServiceFormModel
+    private sealed class ServiceFormModel : CommercialFormModel
     {
+        [System.ComponentModel.DataAnnotations.MaxLength(64, ErrorMessage = "La referencia no puede superar 64 caracteres.")]
+        public string? Reference { get; set; }
+
+        [System.ComponentModel.DataAnnotations.MaxLength(100, ErrorMessage = "La modalidad no puede superar 100 caracteres.")]
+        public string? DeliveryMode { get; set; }
+
+        [System.ComponentModel.DataAnnotations.MaxLength(100, ErrorMessage = "La periodicidad no puede superar 100 caracteres.")]
+        public string? BillingPeriod { get; set; }
+
         [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El nombre es obligatorio.")]
         [System.ComponentModel.DataAnnotations.MaxLength(200)]
         public string Name { get; set; } = string.Empty;
@@ -696,6 +819,7 @@ else
 
         public string CategoryId { get; set; } = string.Empty;
 
+        [System.ComponentModel.DataAnnotations.Range(0, int.MaxValue, ErrorMessage = "La duración no puede ser negativa.")]
         public int? DurationMinutes { get; set; }
 
         public bool IsRecurring { get; set; }

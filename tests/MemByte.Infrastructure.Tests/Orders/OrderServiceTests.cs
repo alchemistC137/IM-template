@@ -30,7 +30,7 @@ public class OrderServiceTests
 	private static async Task<Product> SeedProductAsync(MemByteDbContext dbContext, Guid clientId, decimal amount = 50m)
 	{
 		dbContext.Clients.Add(new Client("Cliente de prueba"));
-		var product = new Product(clientId, "Mantenimiento mensual", "desc", new Price(amount, "EUR"));
+		var product = new Product("Mantenimiento mensual", "desc", new Price(amount, "EUR"));
 		dbContext.Products.Add(product);
 		await dbContext.SaveChangesAsync();
 		return product;
@@ -83,19 +83,50 @@ public class OrderServiceTests
 	}
 
 	[Fact]
-	public async Task AddLineAsync_WithCatalogItemFromAnotherClient_ReturnsFailure()
+	public async Task AddLineAsync_SharedCatalogCanBeUsedByDifferentClients()
+	{
+		await using var dbContext = CreateDbContext();
+		var clientA = Guid.NewGuid();
+		var clientB = Guid.NewGuid();
+		var product = await SeedProductAsync(dbContext, clientA);
+		var service = new OrderService(dbContext);
+		var first = await service.CreateOrderAsync(clientA, Guid.NewGuid(), new CreateOrderRequest());
+		var second = await service.CreateOrderAsync(clientB, Guid.NewGuid(), new CreateOrderRequest());
+		var resultA = await service.AddLineAsync(clientA, first.Value!.Id, new AddOrderLineRequest(product.Id, 1));
+		var resultB = await service.AddLineAsync(clientB, second.Value!.Id, new AddOrderLineRequest(product.Id, 2));
+		Assert.True(resultA.Succeeded);
+		Assert.True(resultB.Succeeded);
+		Assert.Equal(product.Id, Assert.Single(resultA.Value!.Lines).CatalogItemId);
+		Assert.Equal(product.Id, Assert.Single(resultB.Value!.Lines).CatalogItemId);
+		Assert.Equal(100m, resultB.Value.Total);
+	}
+
+	[Fact]
+	public async Task AddLineAsync_FromAnotherClient_DoesNotModifyOrder()
 	{
 		await using var dbContext = CreateDbContext();
 		var clientId = Guid.NewGuid();
-		var otherClientId = Guid.NewGuid();
-		var product = await SeedProductAsync(dbContext, otherClientId);
-
+		var product = await SeedProductAsync(dbContext, clientId);
 		var service = new OrderService(dbContext);
 		var created = await service.CreateOrderAsync(clientId, Guid.NewGuid(), new CreateOrderRequest());
-
-		var result = await service.AddLineAsync(clientId, created.Value!.Id, new AddOrderLineRequest(product.Id, 1));
-
+		var result = await service.AddLineAsync(Guid.NewGuid(), created.Value!.Id, new AddOrderLineRequest(product.Id, 1));
 		Assert.False(result.Succeeded);
+		Assert.Empty((await service.GetOrderAsync(clientId, created.Value.Id))!.Lines);
+	}
+
+	[Fact]
+	public async Task AddLineAsync_WithInactiveProduct_ReturnsFailure()
+	{
+		await using var dbContext = CreateDbContext();
+		var clientId = Guid.NewGuid();
+		var product = await SeedProductAsync(dbContext, clientId);
+		product.Deactivate();
+		await dbContext.SaveChangesAsync();
+		var service = new OrderService(dbContext);
+		var created = await service.CreateOrderAsync(clientId, Guid.NewGuid(), new CreateOrderRequest());
+		var result = await service.AddLineAsync(clientId, created.Value!.Id, new AddOrderLineRequest(product.Id, 1));
+		Assert.False(result.Succeeded);
+		Assert.Empty(dbContext.OrderLines);
 	}
 
 	[Fact]

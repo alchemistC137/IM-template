@@ -55,6 +55,14 @@ La solución está construida sobre **.NET 10 LTS** y **Blazor**, garantizando u
 - En móvil se abre desde el lateral izquierdo, con fondo superpuesto y cierre mediante el botón, Escape, clic fuera o selección de una opción.
 - Los usuarios autenticados ven su nombre y correo en la sección **Mi perfil** del menú, tanto en escritorio como en móvil. El botón **Cerrar sesión** se encuentra en esa sección y mantiene el envío POST con protección antiforgery.
 
+### Catálogo único de la instalación
+
+- `/catalog` gestiona directamente un único catálogo de la empresa propietaria de la intranet, sin selector ni catálogos por cliente comercial. Los clientes (`Client`) no representan al propietario de la instalación.
+- Se mantienen categorías jerárquicas, productos y servicios. Se añaden unidad de venta/facturación, impuesto informativo y proveedor; marca y plazo de entrega en productos; referencia, modalidad y periodicidad en servicios.
+- La pantalla conserva su autorización actual exclusiva de `Admin`. La matriz de compras expresa capacidades funcionales previstas; esta conversión no habilita gestión del catálogo para otros roles.
+- Los pedidos utilizan artículos activos del catálogo único, pero conservan el aislamiento por cliente comercial. Los artículos incluidos en pedidos no pueden borrarse: se desactivan para conservar el historial. Impuestos y condiciones comerciales no alteran los totales ni implementan facturación automática.
+- La migración `SingleInstallationCatalog` solo admite catálogos vacíos, tanto en conversión como en reversión. Si existen datos, requiere una migración de datos específica; no se borran ni se mezclan automáticamente. Cada instalación sigue teniendo base de datos y catálogo independientes.
+
 ### 1. Administrador (`Admin`)
 
 > Rol de máximo privilegio. Responsable de la configuración global del sistema, la gestión de usuarios y el mantenimiento de la plataforma.

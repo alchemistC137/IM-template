@@ -1,16 +1,15 @@
 # Módulo de pedidos (Orders)
 
-Vista genérica de plantilla para la gestión de pedidos/órdenes. Cada cliente
-de MemByte-IM ordena artículos de su propio catálogo (`MemByte.Domain.Catalog`)
-y este módulo administra las tareas clásicas de gestión de pedidos: alta,
-líneas, confirmación, progreso, cierre, cancelación y estado de pago.
+Vista genérica de plantilla para la gestión de pedidos/órdenes. Los clientes
+comerciales ordenan artículos activos del catálogo único de la instalación
+(`MemByte.Domain.Catalog`). Los pedidos mantienen su aislamiento por `ClientId`:
+compartir artículos no permite acceder ni modificar pedidos de otro cliente.
 
-En el caso concreto de MemByte (la propia empresa gestionada por esta
-intranet), sus clientes ordenan soluciones digitales y podrán contratar
-diversos servicios de mantenimiento. Esto es solo un ejemplo de uso: el
-modelo (`Order`, `OrderLine`, `OrderStatus`, `OrderPaymentStatus`) se ha
-mantenido intencionadamente mínimo y extensible para que cada cliente de la
-plantilla lo adapte a su propio flujo de pedidos.
+El módulo administra alta, líneas, confirmación, progreso, cierre, cancelación y
+estado de pago. Su modelo (`Order`, `OrderLine`, `OrderStatus`, `OrderPaymentStatus`)
+permanece mínimo y extensible para que cada empresa adapte su flujo de pedidos.
+Los nuevos campos comerciales del catálogo son informativos: no modifican el
+cálculo de totales ni implementan facturación o inventario.
 
 - `OrderStatus`: flujo mínimo (Draft → Confirmed → InProgress → Completed,
   con Cancelled como salida anómala). Ampliable con más estados intermedios.

@@ -6,7 +6,6 @@ namespace MemByte.Application.Catalog;
 /// </summary>
 public sealed record CatalogCategoryDto(
 	Guid Id,
-	Guid ClientId,
 	string Name,
 	Guid? ParentCategoryId,
 	bool IsActive,

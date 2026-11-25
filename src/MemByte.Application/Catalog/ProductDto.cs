@@ -5,7 +5,6 @@ namespace MemByte.Application.Catalog;
 /// </summary>
 public sealed record ProductDto(
 	Guid Id,
-	Guid ClientId,
 	string Name,
 	string Description,
 	decimal PriceAmount,
@@ -14,4 +13,9 @@ public sealed record ProductDto(
 	string? Sku,
 	bool IsActive,
 	DateTimeOffset CreatedAt,
-	DateTimeOffset UpdatedAt);
+	DateTimeOffset UpdatedAt,
+	string? UnitOfMeasure,
+	decimal? TaxRate,
+	string? Supplier,
+	string? Brand,
+	int? DeliveryDays);

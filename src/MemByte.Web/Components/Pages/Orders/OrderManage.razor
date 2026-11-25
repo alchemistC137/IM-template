@@ -285,8 +285,8 @@ else
 
     private async Task LoadCatalogItemsAsync()
     {
-        products = (await CatalogService.GetProductsAsync(ClientId)).Where(p => p.IsActive).ToList();
-        services = (await CatalogService.GetServicesAsync(ClientId)).Where(s => s.IsActive).ToList();
+        products = (await CatalogService.GetProductsAsync()).Where(p => p.IsActive).ToList();
+        services = (await CatalogService.GetServicesAsync()).Where(s => s.IsActive).ToList();
         catalogItems =
         [
             .. products.Select(p => new CatalogItemOption(p.Id, p.Name, p.PriceAmount, p.PriceCurrencyCode)),

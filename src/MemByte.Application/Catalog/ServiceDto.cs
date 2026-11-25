@@ -5,7 +5,6 @@ namespace MemByte.Application.Catalog;
 /// </summary>
 public sealed record ServiceDto(
 	Guid Id,
-	Guid ClientId,
 	string Name,
 	string Description,
 	decimal PriceAmount,
@@ -15,4 +14,10 @@ public sealed record ServiceDto(
 	bool IsRecurring,
 	bool IsActive,
 	DateTimeOffset CreatedAt,
-	DateTimeOffset UpdatedAt);
+	DateTimeOffset UpdatedAt,
+	string? UnitOfMeasure,
+	decimal? TaxRate,
+	string? Supplier,
+	string? Reference,
+	string? DeliveryMode,
+	string? BillingPeriod);

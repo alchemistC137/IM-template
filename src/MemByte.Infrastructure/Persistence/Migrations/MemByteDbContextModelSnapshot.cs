@@ -27,9 +27,6 @@ namespace MemByte.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ClientId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -46,9 +43,9 @@ namespace MemByte.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ParentCategoryId");
+                    b.HasIndex("Name");
 
-                    b.HasIndex("ClientId", "Name");
+                    b.HasIndex("ParentCategoryId");
 
                     b.ToTable("CatalogCategories", (string)null);
                 });
@@ -59,9 +56,6 @@ namespace MemByte.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("CategoryId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ClientId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -85,6 +79,18 @@ namespace MemByte.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("Supplier")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<decimal?>("TaxRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
+
+                    b.Property<string>("UnitOfMeasure")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -92,7 +98,7 @@ namespace MemByte.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("ClientId", "Name");
+                    b.HasIndex("Name");
 
                     b.ToTable("CatalogItems", (string)null);
 
@@ -816,6 +822,13 @@ namespace MemByte.Infrastructure.Persistence.Migrations
                 {
                     b.HasBaseType("MemByte.Domain.Catalog.CatalogItem");
 
+                    b.Property<string>("Brand")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("DeliveryDays")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Sku")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -827,23 +840,29 @@ namespace MemByte.Infrastructure.Persistence.Migrations
                 {
                     b.HasBaseType("MemByte.Domain.Catalog.CatalogItem");
 
+                    b.Property<string>("BillingPeriod")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DeliveryMode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<int?>("DurationMinutes")
                         .HasColumnType("integer");
 
                     b.Property<bool>("IsRecurring")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Reference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.HasDiscriminator().HasValue("Service");
                 });
 
             modelBuilder.Entity("MemByte.Domain.Catalog.CatalogCategory", b =>
                 {
-                    b.HasOne("MemByte.Domain.Clients.Client", null)
-                        .WithMany()
-                        .HasForeignKey("ClientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("MemByte.Domain.Catalog.CatalogCategory", null)
                         .WithMany()
                         .HasForeignKey("ParentCategoryId")
@@ -856,12 +875,6 @@ namespace MemByte.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("MemByte.Domain.Clients.Client", null)
-                        .WithMany()
-                        .HasForeignKey("ClientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
 
                     b.OwnsOne("MemByte.Domain.Catalog.Price", "Price", b1 =>
                         {

@@ -30,6 +30,7 @@ recursos de producción.
 - Mensajería Interna
 - Gestión de Compras
 - Gestión de Clientes
+- Catálogo único de productos y servicios de la instalación (`/catalog`, gestión Admin), con categorías y campos comerciales genéricos. No hay catálogos por cliente comercial. Consulta [la documentación del catálogo](./src/MemByte.Domain/Catalog/README.md) para sus campos y la migración `SingleInstallationCatalog`, que requiere un catálogo vacío.
 
 Proyectos, entregables, horas y facturación son capacidades previstas en los planes,
 no módulos implementados por esta conversión a plantilla.

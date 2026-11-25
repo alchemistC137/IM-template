@@ -6,12 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace MemByte.Infrastructure.Catalog;
 
 /// <summary>
-/// Implementación de <see cref="ICatalogService"/> sobre
-/// <see cref="MemByteDbContext"/>. Sigue el mismo estilo que
-/// <c>ClientService</c>/<c>EmployeeService</c>: sin repositorio genérico
-/// adicional. Todas las consultas y mutaciones filtran siempre por el
-/// <c>clientId</c> recibido, que es la barrera de aislamiento entre
-/// catálogos de distintos clientes de la plantilla.
+/// Gestión del catálogo único de la instalación sobre <see cref="MemByteDbContext"/>.
 /// </summary>
 public class CatalogService : ICatalogService
 {
@@ -22,39 +17,27 @@ public class CatalogService : ICatalogService
 		_dbContext = dbContext;
 	}
 
-	// ---------------------------------------------------------------
-	// Categorías.
-	// ---------------------------------------------------------------
-
-	public async Task<IReadOnlyList<CatalogCategoryDto>> GetCategoriesAsync(Guid clientId, CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<CatalogCategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default)
 	{
-		return await _dbContext.CatalogCategories
-			.AsNoTracking()
-			.Where(c => c.ClientId == clientId)
-			.OrderBy(c => c.Name)
-			.Select(c => ToDto(c))
-			.ToListAsync(cancellationToken);
+		return await _dbContext.CatalogCategories.AsNoTracking()
+			.OrderBy(c => c.Name).Select(c => ToDto(c)).ToListAsync(cancellationToken);
 	}
 
-	public async Task<CatalogCategoryDto?> GetCategoryAsync(Guid clientId, Guid categoryId, CancellationToken cancellationToken = default)
+	public async Task<CatalogCategoryDto?> GetCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default)
 	{
-		var category = await FindCategoryAsync(clientId, categoryId, tracking: false, cancellationToken);
+		var category = await FindCategoryAsync(categoryId, false, cancellationToken);
 		return category is null ? null : ToDto(category);
 	}
 
-	public async Task<CatalogOperationResult<CatalogCategoryDto>> CreateCategoryAsync(Guid clientId, CreateCatalogCategoryRequest request, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<CatalogCategoryDto>> CreateCategoryAsync(CreateCatalogCategoryRequest request, CancellationToken cancellationToken = default)
 	{
-		if (request.ParentCategoryId is Guid parentId)
-		{
-			var parentExists = await FindCategoryAsync(clientId, parentId, tracking: false, cancellationToken) is not null;
-			if (!parentExists)
-				return CatalogOperationResult<CatalogCategoryDto>.Failure("La categoría padre indicada no existe.");
-		}
+		if (request.ParentCategoryId is Guid parentId && await FindCategoryAsync(parentId, false, cancellationToken) is null)
+			return CatalogOperationResult<CatalogCategoryDto>.Failure("La categoría padre indicada no existe.");
 
 		CatalogCategory category;
 		try
 		{
-			category = new CatalogCategory(clientId, request.Name, request.ParentCategoryId, request.IsActive);
+			category = new CatalogCategory(request.Name, request.ParentCategoryId, request.IsActive);
 		}
 		catch (ArgumentException ex)
 		{
@@ -63,13 +46,12 @@ public class CatalogService : ICatalogService
 
 		_dbContext.CatalogCategories.Add(category);
 		await _dbContext.SaveChangesAsync(cancellationToken);
-
 		return CatalogOperationResult<CatalogCategoryDto>.Success(ToDto(category));
 	}
 
-	public async Task<CatalogOperationResult<CatalogCategoryDto>> UpdateCategoryAsync(Guid clientId, Guid categoryId, UpdateCatalogCategoryRequest request, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<CatalogCategoryDto>> UpdateCategoryAsync(Guid categoryId, UpdateCatalogCategoryRequest request, CancellationToken cancellationToken = default)
 	{
-		var category = await FindCategoryAsync(clientId, categoryId, tracking: true, cancellationToken);
+		var category = await FindCategoryAsync(categoryId, true, cancellationToken);
 		if (category is null)
 			return CatalogOperationResult<CatalogCategoryDto>.Failure("La categoría no existe.");
 
@@ -77,12 +59,9 @@ public class CatalogService : ICatalogService
 		{
 			if (parentId == categoryId)
 				return CatalogOperationResult<CatalogCategoryDto>.Failure("Una categoría no puede ser su propio padre.");
-
-			var parentExists = await FindCategoryAsync(clientId, parentId, tracking: false, cancellationToken) is not null;
-			if (!parentExists)
+			if (await FindCategoryAsync(parentId, false, cancellationToken) is null)
 				return CatalogOperationResult<CatalogCategoryDto>.Failure("La categoría padre indicada no existe.");
-
-			if (await IsDescendantAsync(clientId, categoryId, parentId, cancellationToken))
+			if (await IsDescendantAsync(categoryId, parentId, cancellationToken))
 				return CatalogOperationResult<CatalogCategoryDto>.Failure("No se puede mover una categoría dentro de su propio subárbol.");
 		}
 
@@ -100,69 +79,48 @@ public class CatalogService : ICatalogService
 			category.Activate();
 		else
 			category.Deactivate();
-
 		await _dbContext.SaveChangesAsync(cancellationToken);
-
 		return CatalogOperationResult<CatalogCategoryDto>.Success(ToDto(category));
 	}
 
-	public async Task<CatalogOperationResult<bool>> DeleteCategoryAsync(Guid clientId, Guid categoryId, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<bool>> DeleteCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default)
 	{
-		var category = await FindCategoryAsync(clientId, categoryId, tracking: true, cancellationToken);
+		var category = await FindCategoryAsync(categoryId, true, cancellationToken);
 		if (category is null)
 			return CatalogOperationResult<bool>.Failure("La categoría no existe.");
-
-		var hasChildren = await _dbContext.CatalogCategories
-			.AsNoTracking()
-			.AnyAsync(c => c.ClientId == clientId && c.ParentCategoryId == categoryId, cancellationToken);
-		if (hasChildren)
+		if (await _dbContext.CatalogCategories.AsNoTracking().AnyAsync(c => c.ParentCategoryId == categoryId, cancellationToken))
 			return CatalogOperationResult<bool>.Failure("No se puede eliminar una categoría que tiene subcategorías.");
-
-		var hasProducts = await _dbContext.Products
-			.AsNoTracking()
-			.AnyAsync(p => p.ClientId == clientId && p.CategoryId == categoryId, cancellationToken);
-		var hasServices = await _dbContext.Services
-			.AsNoTracking()
-			.AnyAsync(s => s.ClientId == clientId && s.CategoryId == categoryId, cancellationToken);
-		if (hasProducts || hasServices)
+		if (await _dbContext.Set<CatalogItem>().AsNoTracking().AnyAsync(i => i.CategoryId == categoryId, cancellationToken))
 			return CatalogOperationResult<bool>.Failure("No se puede eliminar una categoría que tiene productos o servicios asociados.");
 
 		_dbContext.CatalogCategories.Remove(category);
 		await _dbContext.SaveChangesAsync(cancellationToken);
-
 		return CatalogOperationResult<bool>.Success(true);
 	}
 
-	// ---------------------------------------------------------------
-	// Productos.
-	// ---------------------------------------------------------------
-
-	public async Task<IReadOnlyList<ProductDto>> GetProductsAsync(Guid clientId, CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<ProductDto>> GetProductsAsync(CancellationToken cancellationToken = default)
 	{
-		return await _dbContext.Products
-			.AsNoTracking()
-			.Where(p => p.ClientId == clientId)
-			.OrderBy(p => p.Name)
-			.Select(p => ToDto(p))
-			.ToListAsync(cancellationToken);
+		return await _dbContext.Products.AsNoTracking()
+			.OrderBy(p => p.Name).Select(p => ToDto(p)).ToListAsync(cancellationToken);
 	}
 
-	public async Task<ProductDto?> GetProductAsync(Guid clientId, Guid productId, CancellationToken cancellationToken = default)
+	public async Task<ProductDto?> GetProductAsync(Guid productId, CancellationToken cancellationToken = default)
 	{
-		var product = await FindProductAsync(clientId, productId, tracking: false, cancellationToken);
+		var product = await FindProductAsync(productId, false, cancellationToken);
 		return product is null ? null : ToDto(product);
 	}
 
-	public async Task<CatalogOperationResult<ProductDto>> CreateProductAsync(Guid clientId, CreateProductRequest request, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<ProductDto>> CreateProductAsync(CreateProductRequest request, CancellationToken cancellationToken = default)
 	{
-		if (request.CategoryId is Guid categoryId && await FindCategoryAsync(clientId, categoryId, tracking: false, cancellationToken) is null)
+		if (request.CategoryId is Guid categoryId && await FindCategoryAsync(categoryId, false, cancellationToken) is null)
 			return CatalogOperationResult<ProductDto>.Failure("La categoría indicada no existe.");
 
 		Product product;
 		try
 		{
-			var price = new Price(request.PriceAmount, request.PriceCurrencyCode);
-			product = new Product(clientId, request.Name, request.Description, price, request.CategoryId, request.Sku, request.IsActive);
+			product = new Product(request.Name, request.Description, new Price(request.PriceAmount, request.PriceCurrencyCode),
+				request.CategoryId, request.Sku, request.IsActive, request.UnitOfMeasure, request.TaxRate,
+				request.Supplier, request.Brand, request.DeliveryDays);
 		}
 		catch (ArgumentException ex)
 		{
@@ -171,27 +129,30 @@ public class CatalogService : ICatalogService
 
 		_dbContext.Products.Add(product);
 		await _dbContext.SaveChangesAsync(cancellationToken);
-
 		return CatalogOperationResult<ProductDto>.Success(ToDto(product));
 	}
 
-	public async Task<CatalogOperationResult<ProductDto>> UpdateProductAsync(Guid clientId, Guid productId, UpdateProductRequest request, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<ProductDto>> UpdateProductAsync(Guid productId, UpdateProductRequest request, CancellationToken cancellationToken = default)
 	{
-		var product = await FindProductAsync(clientId, productId, tracking: true, cancellationToken);
+		var product = await FindProductAsync(productId, true, cancellationToken);
 		if (product is null)
 			return CatalogOperationResult<ProductDto>.Failure("El producto no existe.");
-
-		if (request.CategoryId is Guid categoryId && await FindCategoryAsync(clientId, categoryId, tracking: false, cancellationToken) is null)
+		if (request.CategoryId is Guid categoryId && await FindCategoryAsync(categoryId, false, cancellationToken) is null)
 			return CatalogOperationResult<ProductDto>.Failure("La categoría indicada no existe.");
 
 		try
 		{
-			var price = new Price(request.PriceAmount, request.PriceCurrencyCode);
-			product.Rename(request.Name);
-			product.UpdateDescription(request.Description);
-			product.UpdatePrice(price);
-			product.ChangeCategory(request.CategoryId);
-			product.UpdateSku(request.Sku);
+			// Validar todo antes de modificar la entidad seguida por EF.
+			var validated = new Product(request.Name, request.Description, new Price(request.PriceAmount, request.PriceCurrencyCode),
+				request.CategoryId, request.Sku, request.IsActive, request.UnitOfMeasure, request.TaxRate,
+				request.Supplier, request.Brand, request.DeliveryDays);
+			product.Rename(validated.Name);
+			product.UpdateDescription(validated.Description);
+			product.UpdatePrice(validated.Price);
+			product.ChangeCategory(validated.CategoryId);
+			product.UpdateSku(validated.Sku);
+			product.UpdateCommercialDetails(validated.UnitOfMeasure, validated.TaxRate, validated.Supplier);
+			product.UpdateSupplyDetails(validated.Brand, validated.DeliveryDays);
 		}
 		catch (ArgumentException ex)
 		{
@@ -202,68 +163,58 @@ public class CatalogService : ICatalogService
 			product.Activate();
 		else
 			product.Deactivate();
-
 		await _dbContext.SaveChangesAsync(cancellationToken);
-
 		return CatalogOperationResult<ProductDto>.Success(ToDto(product));
 	}
 
-	public async Task<CatalogOperationResult<bool>> SetProductActiveAsync(Guid clientId, Guid productId, bool isActive, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<bool>> SetProductActiveAsync(Guid productId, bool isActive, CancellationToken cancellationToken = default)
 	{
-		var product = await FindProductAsync(clientId, productId, tracking: true, cancellationToken);
+		var product = await FindProductAsync(productId, true, cancellationToken);
 		if (product is null)
 			return CatalogOperationResult<bool>.Failure("El producto no existe.");
-
 		if (isActive)
 			product.Activate();
 		else
 			product.Deactivate();
-
 		await _dbContext.SaveChangesAsync(cancellationToken);
 		return CatalogOperationResult<bool>.Success(isActive);
 	}
 
-	public async Task<bool> DeleteProductAsync(Guid clientId, Guid productId, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<bool>> DeleteProductAsync(Guid productId, CancellationToken cancellationToken = default)
 	{
-		var product = await FindProductAsync(clientId, productId, tracking: true, cancellationToken);
+		var product = await FindProductAsync(productId, true, cancellationToken);
 		if (product is null)
-			return false;
-
+			return CatalogOperationResult<bool>.Failure("El producto no existe.");
+		if (await HasOrderLinesAsync(productId, cancellationToken))
+			return CatalogOperationResult<bool>.Failure("El producto está incluido en pedidos. Desactívalo para conservar el historial.");
 		_dbContext.Products.Remove(product);
 		await _dbContext.SaveChangesAsync(cancellationToken);
-		return true;
+		return CatalogOperationResult<bool>.Success(true);
 	}
 
-	// ---------------------------------------------------------------
-	// Servicios.
-	// ---------------------------------------------------------------
-
-	public async Task<IReadOnlyList<ServiceDto>> GetServicesAsync(Guid clientId, CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<ServiceDto>> GetServicesAsync(CancellationToken cancellationToken = default)
 	{
-		return await _dbContext.Services
-			.AsNoTracking()
-			.Where(s => s.ClientId == clientId)
-			.OrderBy(s => s.Name)
-			.Select(s => ToDto(s))
-			.ToListAsync(cancellationToken);
+		return await _dbContext.Services.AsNoTracking()
+			.OrderBy(s => s.Name).Select(s => ToDto(s)).ToListAsync(cancellationToken);
 	}
 
-	public async Task<ServiceDto?> GetServiceAsync(Guid clientId, Guid serviceId, CancellationToken cancellationToken = default)
+	public async Task<ServiceDto?> GetServiceAsync(Guid serviceId, CancellationToken cancellationToken = default)
 	{
-		var service = await FindServiceAsync(clientId, serviceId, tracking: false, cancellationToken);
+		var service = await FindServiceAsync(serviceId, false, cancellationToken);
 		return service is null ? null : ToDto(service);
 	}
 
-	public async Task<CatalogOperationResult<ServiceDto>> CreateServiceAsync(Guid clientId, CreateServiceRequest request, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<ServiceDto>> CreateServiceAsync(CreateServiceRequest request, CancellationToken cancellationToken = default)
 	{
-		if (request.CategoryId is Guid categoryId && await FindCategoryAsync(clientId, categoryId, tracking: false, cancellationToken) is null)
+		if (request.CategoryId is Guid categoryId && await FindCategoryAsync(categoryId, false, cancellationToken) is null)
 			return CatalogOperationResult<ServiceDto>.Failure("La categoría indicada no existe.");
 
 		Service service;
 		try
 		{
-			var price = new Price(request.PriceAmount, request.PriceCurrencyCode);
-			service = new Service(clientId, request.Name, request.Description, price, request.CategoryId, request.DurationMinutes, request.IsRecurring, request.IsActive);
+			service = new Service(request.Name, request.Description, new Price(request.PriceAmount, request.PriceCurrencyCode),
+				request.CategoryId, request.DurationMinutes, request.IsRecurring, request.IsActive,
+				request.UnitOfMeasure, request.TaxRate, request.Supplier, request.Reference, request.DeliveryMode, request.BillingPeriod);
 		}
 		catch (ArgumentException ex)
 		{
@@ -272,28 +223,31 @@ public class CatalogService : ICatalogService
 
 		_dbContext.Services.Add(service);
 		await _dbContext.SaveChangesAsync(cancellationToken);
-
 		return CatalogOperationResult<ServiceDto>.Success(ToDto(service));
 	}
 
-	public async Task<CatalogOperationResult<ServiceDto>> UpdateServiceAsync(Guid clientId, Guid serviceId, UpdateServiceRequest request, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<ServiceDto>> UpdateServiceAsync(Guid serviceId, UpdateServiceRequest request, CancellationToken cancellationToken = default)
 	{
-		var service = await FindServiceAsync(clientId, serviceId, tracking: true, cancellationToken);
+		var service = await FindServiceAsync(serviceId, true, cancellationToken);
 		if (service is null)
 			return CatalogOperationResult<ServiceDto>.Failure("El servicio no existe.");
-
-		if (request.CategoryId is Guid categoryId && await FindCategoryAsync(clientId, categoryId, tracking: false, cancellationToken) is null)
+		if (request.CategoryId is Guid categoryId && await FindCategoryAsync(categoryId, false, cancellationToken) is null)
 			return CatalogOperationResult<ServiceDto>.Failure("La categoría indicada no existe.");
 
 		try
 		{
-			var price = new Price(request.PriceAmount, request.PriceCurrencyCode);
-			service.Rename(request.Name);
-			service.UpdateDescription(request.Description);
-			service.UpdatePrice(price);
-			service.ChangeCategory(request.CategoryId);
-			service.UpdateDuration(request.DurationMinutes);
-			service.SetRecurring(request.IsRecurring);
+			// Validar todo antes de modificar la entidad seguida por EF.
+			var validated = new Service(request.Name, request.Description, new Price(request.PriceAmount, request.PriceCurrencyCode),
+				request.CategoryId, request.DurationMinutes, request.IsRecurring, request.IsActive,
+				request.UnitOfMeasure, request.TaxRate, request.Supplier, request.Reference, request.DeliveryMode, request.BillingPeriod);
+			service.Rename(validated.Name);
+			service.UpdateDescription(validated.Description);
+			service.UpdatePrice(validated.Price);
+			service.ChangeCategory(validated.CategoryId);
+			service.UpdateDuration(validated.DurationMinutes);
+			service.SetRecurring(validated.IsRecurring);
+			service.UpdateCommercialDetails(validated.UnitOfMeasure, validated.TaxRate, validated.Supplier);
+			service.UpdateProvisionDetails(validated.Reference, validated.DeliveryMode, validated.BillingPeriod);
 		}
 		catch (ArgumentException ex)
 		{
@@ -304,117 +258,80 @@ public class CatalogService : ICatalogService
 			service.Activate();
 		else
 			service.Deactivate();
-
 		await _dbContext.SaveChangesAsync(cancellationToken);
-
 		return CatalogOperationResult<ServiceDto>.Success(ToDto(service));
 	}
 
-	public async Task<CatalogOperationResult<bool>> SetServiceActiveAsync(Guid clientId, Guid serviceId, bool isActive, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<bool>> SetServiceActiveAsync(Guid serviceId, bool isActive, CancellationToken cancellationToken = default)
 	{
-		var service = await FindServiceAsync(clientId, serviceId, tracking: true, cancellationToken);
+		var service = await FindServiceAsync(serviceId, true, cancellationToken);
 		if (service is null)
 			return CatalogOperationResult<bool>.Failure("El servicio no existe.");
-
 		if (isActive)
 			service.Activate();
 		else
 			service.Deactivate();
-
 		await _dbContext.SaveChangesAsync(cancellationToken);
 		return CatalogOperationResult<bool>.Success(isActive);
 	}
 
-	public async Task<bool> DeleteServiceAsync(Guid clientId, Guid serviceId, CancellationToken cancellationToken = default)
+	public async Task<CatalogOperationResult<bool>> DeleteServiceAsync(Guid serviceId, CancellationToken cancellationToken = default)
 	{
-		var service = await FindServiceAsync(clientId, serviceId, tracking: true, cancellationToken);
+		var service = await FindServiceAsync(serviceId, true, cancellationToken);
 		if (service is null)
-			return false;
-
+			return CatalogOperationResult<bool>.Failure("El servicio no existe.");
+		if (await HasOrderLinesAsync(serviceId, cancellationToken))
+			return CatalogOperationResult<bool>.Failure("El servicio está incluido en pedidos. Desactívalo para conservar el historial.");
 		_dbContext.Services.Remove(service);
 		await _dbContext.SaveChangesAsync(cancellationToken);
-		return true;
+		return CatalogOperationResult<bool>.Success(true);
 	}
 
-	// ---------------------------------------------------------------
-	// Auxiliares.
-	// ---------------------------------------------------------------
+	private Task<bool> HasOrderLinesAsync(Guid itemId, CancellationToken cancellationToken) =>
+		_dbContext.OrderLines.AsNoTracking().AnyAsync(l => l.CatalogItemId == itemId, cancellationToken);
 
-	private Task<CatalogCategory?> FindCategoryAsync(Guid clientId, Guid categoryId, bool tracking, CancellationToken cancellationToken)
+	private Task<CatalogCategory?> FindCategoryAsync(Guid categoryId, bool tracking, CancellationToken cancellationToken)
 	{
 		var query = tracking ? _dbContext.CatalogCategories : _dbContext.CatalogCategories.AsNoTracking();
-		return query.FirstOrDefaultAsync(c => c.ClientId == clientId && c.Id == categoryId, cancellationToken);
+		return query.FirstOrDefaultAsync(c => c.Id == categoryId, cancellationToken);
 	}
 
-	private Task<Product?> FindProductAsync(Guid clientId, Guid productId, bool tracking, CancellationToken cancellationToken)
+	private Task<Product?> FindProductAsync(Guid productId, bool tracking, CancellationToken cancellationToken)
 	{
 		var query = tracking ? _dbContext.Products : _dbContext.Products.AsNoTracking();
-		return query.FirstOrDefaultAsync(p => p.ClientId == clientId && p.Id == productId, cancellationToken);
+		return query.FirstOrDefaultAsync(p => p.Id == productId, cancellationToken);
 	}
 
-	private Task<Service?> FindServiceAsync(Guid clientId, Guid serviceId, bool tracking, CancellationToken cancellationToken)
+	private Task<Service?> FindServiceAsync(Guid serviceId, bool tracking, CancellationToken cancellationToken)
 	{
 		var query = tracking ? _dbContext.Services : _dbContext.Services.AsNoTracking();
-		return query.FirstOrDefaultAsync(s => s.ClientId == clientId && s.Id == serviceId, cancellationToken);
+		return query.FirstOrDefaultAsync(s => s.Id == serviceId, cancellationToken);
 	}
 
-	/// <summary>
-	/// Comprueba si <paramref name="candidateParentId"/> es descendiente de
-	/// <paramref name="categoryId"/> (o el mismo), para evitar ciclos al
-	/// mover una categoría dentro del árbol.
-	/// </summary>
-	private async Task<bool> IsDescendantAsync(Guid clientId, Guid categoryId, Guid candidateParentId, CancellationToken cancellationToken)
+	private async Task<bool> IsDescendantAsync(Guid categoryId, Guid candidateParentId, CancellationToken cancellationToken)
 	{
-		var categories = await _dbContext.CatalogCategories
-			.AsNoTracking()
-			.Where(c => c.ClientId == clientId)
-			.Select(c => new { c.Id, c.ParentCategoryId })
-			.ToListAsync(cancellationToken);
-
+		var categories = await _dbContext.CatalogCategories.AsNoTracking()
+			.Select(c => new { c.Id, c.ParentCategoryId }).ToListAsync(cancellationToken);
 		var currentId = (Guid?)candidateParentId;
 		while (currentId is not null)
 		{
 			if (currentId == categoryId)
 				return true;
-
 			currentId = categories.FirstOrDefault(c => c.Id == currentId)?.ParentCategoryId;
 		}
-
 		return false;
 	}
 
 	private static CatalogCategoryDto ToDto(CatalogCategory category) => new(
-		category.Id,
-		category.ClientId,
-		category.Name,
-		category.ParentCategoryId,
-		category.IsActive,
-		category.CreatedAt);
+		category.Id, category.Name, category.ParentCategoryId, category.IsActive, category.CreatedAt);
 
 	private static ProductDto ToDto(Product product) => new(
-		product.Id,
-		product.ClientId,
-		product.Name,
-		product.Description,
-		product.Price.Amount,
-		product.Price.CurrencyCode,
-		product.CategoryId,
-		product.Sku,
-		product.IsActive,
-		product.CreatedAt,
-		product.UpdatedAt);
+		product.Id, product.Name, product.Description, product.Price.Amount, product.Price.CurrencyCode,
+		product.CategoryId, product.Sku, product.IsActive, product.CreatedAt, product.UpdatedAt,
+		product.UnitOfMeasure, product.TaxRate, product.Supplier, product.Brand, product.DeliveryDays);
 
 	private static ServiceDto ToDto(Service service) => new(
-		service.Id,
-		service.ClientId,
-		service.Name,
-		service.Description,
-		service.Price.Amount,
-		service.Price.CurrencyCode,
-		service.CategoryId,
-		service.DurationMinutes,
-		service.IsRecurring,
-		service.IsActive,
-		service.CreatedAt,
-		service.UpdatedAt);
+		service.Id, service.Name, service.Description, service.Price.Amount, service.Price.CurrencyCode,
+		service.CategoryId, service.DurationMinutes, service.IsRecurring, service.IsActive, service.CreatedAt, service.UpdatedAt,
+		service.UnitOfMeasure, service.TaxRate, service.Supplier, service.Reference, service.DeliveryMode, service.BillingPeriod);
 }

@@ -92,9 +92,9 @@ public class OrderService : IOrderService
 
 		var catalogItem = await _dbContext.Set<CatalogItem>()
 			.AsNoTracking()
-			.FirstOrDefaultAsync(i => i.Id == request.CatalogItemId && i.ClientId == clientId, cancellationToken);
+			.FirstOrDefaultAsync(i => i.Id == request.CatalogItemId && i.IsActive, cancellationToken);
 		if (catalogItem is null)
-			return OrderOperationResult<OrderDto>.Failure("El artículo del catálogo indicado no existe.");
+			return OrderOperationResult<OrderDto>.Failure("El artículo del catálogo indicado no existe o no está activo.");
 
 		try
 		{

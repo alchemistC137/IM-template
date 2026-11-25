@@ -242,12 +242,8 @@ public class MemByteDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
 	}
 
 	/// <summary>
-	/// Configuración del módulo de catálogo de productos y servicios. Cada
-	/// cliente de la plantilla tiene su propio catálogo, aislado mediante
-	/// <c>ClientId</c> (obligatorio, sin catálogo global). <c>Product</c> y
-	/// <c>Service</c> comparten tabla (TPH) porque heredan de
-	/// <c>CatalogItem</c> y ambos son, conceptualmente, artículos del mismo
-	/// catálogo.
+	/// Configuración del catálogo único de la instalación, independiente de
+	/// los clientes comerciales. Productos y servicios comparten tabla (TPH).
 	/// </summary>
 	private static void ConfigureCatalog(ModelBuilder modelBuilder)
 	{
@@ -258,11 +254,6 @@ public class MemByteDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
 			entity.Property(c => c.Id).ValueGeneratedNever();
 			entity.Property(c => c.Name).IsRequired().HasMaxLength(CatalogCategory.NameMaxLength);
 
-			entity.HasOne<Client>()
-				.WithMany()
-				.HasForeignKey(c => c.ClientId)
-				.OnDelete(DeleteBehavior.Restrict);
-
 			// Restrict: no se puede borrar una categoría padre en cascada;
 			// primero hay que mover o eliminar sus subcategorías (lo aplica
 			// CatalogService antes de llegar aquí).
@@ -271,7 +262,7 @@ public class MemByteDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
 				.HasForeignKey(c => c.ParentCategoryId)
 				.OnDelete(DeleteBehavior.Restrict);
 
-			entity.HasIndex(c => new { c.ClientId, c.Name });
+			entity.HasIndex(c => c.Name);
 			entity.HasIndex(c => c.ParentCategoryId);
 		});
 
@@ -282,6 +273,9 @@ public class MemByteDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
 			entity.Property(i => i.Id).ValueGeneratedNever();
 			entity.Property(i => i.Name).IsRequired().HasMaxLength(CatalogItem.NameMaxLength);
 			entity.Property(i => i.Description).HasMaxLength(CatalogItem.DescriptionMaxLength);
+			entity.Property(i => i.UnitOfMeasure).HasMaxLength(CatalogItem.UnitOfMeasureMaxLength);
+			entity.Property(i => i.TaxRate).HasPrecision(5, 2);
+			entity.Property(i => i.Supplier).HasMaxLength(CatalogItem.SupplierMaxLength);
 			entity.HasDiscriminator<string>("ItemType")
 				.HasValue<Product>("Product")
 				.HasValue<Service>("Service");
@@ -293,11 +287,6 @@ public class MemByteDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
 			});
 			entity.Navigation(i => i.Price).IsRequired();
 
-			entity.HasOne<Client>()
-				.WithMany()
-				.HasForeignKey(i => i.ClientId)
-				.OnDelete(DeleteBehavior.Restrict);
-
 			// Restrict: no se puede eliminar una categoría que tenga artículos
 			// asociados (lo aplica CatalogService antes de llegar aquí).
 			entity.HasOne<CatalogCategory>()
@@ -305,16 +294,22 @@ public class MemByteDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
 				.HasForeignKey(i => i.CategoryId)
 				.OnDelete(DeleteBehavior.Restrict);
 
-			entity.HasIndex(i => new { i.ClientId, i.Name });
+			entity.HasIndex(i => i.Name);
 			entity.HasIndex(i => i.CategoryId);
 		});
 
 		modelBuilder.Entity<Product>(entity =>
 		{
 			entity.Property(p => p.Sku).HasMaxLength(Product.SkuMaxLength);
+			entity.Property(p => p.Brand).HasMaxLength(Product.BrandMaxLength);
 		});
 
-		modelBuilder.Entity<Service>();
+		modelBuilder.Entity<Service>(entity =>
+		{
+			entity.Property(s => s.Reference).HasMaxLength(Service.ReferenceMaxLength);
+			entity.Property(s => s.DeliveryMode).HasMaxLength(Service.DeliveryModeMaxLength);
+			entity.Property(s => s.BillingPeriod).HasMaxLength(Service.BillingPeriodMaxLength);
+		});
 	}
 
 	/// <summary>

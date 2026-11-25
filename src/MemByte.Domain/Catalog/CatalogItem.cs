@@ -1,25 +1,27 @@
 namespace MemByte.Domain.Catalog;
 
 /// <summary>
-/// Base común de todo lo que un cliente de la plantilla puede ofertar a sus
-/// propios clientes: productos (<see cref="Product"/>) y servicios
-/// (<see cref="Service"/>). Concentra los atributos y el comportamiento
-/// compartidos (nombre, descripción, precio, categoría, estado) para que
-/// cada cliente pueda especializar el catálogo según su naturaleza de
-/// negocio sin duplicar estas reglas.
+/// Base de los productos y servicios del catálogo único de la instalación.
+/// Comparte nombre, descripción, precio, categoría y datos comerciales
+/// independientes del sector de la empresa.
 /// </summary>
 public abstract class CatalogItem
 {
 	public const int NameMaxLength = 200;
 	public const int DescriptionMaxLength = 2000;
+	public const int UnitOfMeasureMaxLength = 50;
+	public const int SupplierMaxLength = 200;
 
 	public Guid Id { get; private set; }
 
-	/// <summary>
-	/// Cliente propietario del artículo del catálogo. Obligatorio: cada
-	/// catálogo pertenece a un único cliente de la plantilla.
-	/// </summary>
-	public Guid ClientId { get; private set; }
+	/// <summary>Unidad de venta o facturación, por ejemplo unidad, hora o proyecto.</summary>
+	public string? UnitOfMeasure { get; private set; }
+
+	/// <summary>Porcentaje de impuesto informativo; nulo si no se ha definido.</summary>
+	public decimal? TaxRate { get; private set; }
+
+	/// <summary>Proveedor o prestador del artículo, si procede.</summary>
+	public string? Supplier { get; private set; }
 
 	public string Name { get; private set; } = string.Empty;
 
@@ -41,18 +43,16 @@ public abstract class CatalogItem
 	}
 
 	protected CatalogItem(
-		Guid clientId,
 		string name,
 		string description,
 		Price price,
 		Guid? categoryId,
-		bool isActive)
+		bool isActive,
+		string? unitOfMeasure,
+		decimal? taxRate,
+		string? supplier)
 	{
-		if (clientId == Guid.Empty)
-			throw new ArgumentException("El artículo del catálogo debe pertenecer a un cliente.", nameof(clientId));
-
 		Id = Guid.NewGuid();
-		ClientId = clientId;
 		CreatedAt = DateTimeOffset.UtcNow;
 		UpdatedAt = CreatedAt;
 		SetName(name);
@@ -60,6 +60,34 @@ public abstract class CatalogItem
 		Price = price ?? throw new ArgumentNullException(nameof(price));
 		CategoryId = categoryId;
 		IsActive = isActive;
+		UpdateCommercialDetails(unitOfMeasure, taxRate, supplier);
+	}
+
+	/// <summary>Actualiza los datos comerciales tras validar todos los valores.</summary>
+	public void UpdateCommercialDetails(string? unitOfMeasure, decimal? taxRate, string? supplier)
+	{
+		var unit = NormalizeOptional(unitOfMeasure, UnitOfMeasureMaxLength, "La unidad de medida");
+		var provider = NormalizeOptional(supplier, SupplierMaxLength, "El proveedor");
+		if (taxRate is < 0 or > 100)
+			throw new ArgumentException("El impuesto debe estar entre 0 y 100 %.", nameof(taxRate));
+		if (taxRate.HasValue && decimal.Round(taxRate.Value, 2) != taxRate.Value)
+			throw new ArgumentException("El impuesto admite como máximo dos decimales.", nameof(taxRate));
+
+		UnitOfMeasure = unit;
+		TaxRate = taxRate;
+		Supplier = provider;
+		Touch();
+	}
+
+	/// <summary>Normaliza un texto opcional sin truncar valores inválidos.</summary>
+	protected static string? NormalizeOptional(string? value, int maxLength, string label)
+	{
+		if (string.IsNullOrWhiteSpace(value))
+			return null;
+		value = value.Trim();
+		if (value.Length > maxLength)
+			throw new ArgumentException($"{label} no puede superar {maxLength} caracteres.", nameof(value));
+		return value;
 	}
 
 	public void Rename(string name)
@@ -113,5 +141,6 @@ public abstract class CatalogItem
 		Description = description.Length > DescriptionMaxLength ? description[..DescriptionMaxLength] : description;
 	}
 
-	private void Touch() => UpdatedAt = DateTimeOffset.UtcNow;
+	/// <summary>Registra la modificación del artículo.</summary>
+	protected void Touch() => UpdatedAt = DateTimeOffset.UtcNow;
 }

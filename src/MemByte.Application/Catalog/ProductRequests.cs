@@ -7,7 +7,12 @@ public sealed record CreateProductRequest(
 	string PriceCurrencyCode,
 	Guid? CategoryId = null,
 	string? Sku = null,
-	bool IsActive = true);
+	bool IsActive = true,
+	string? UnitOfMeasure = null,
+	decimal? TaxRate = null,
+	string? Supplier = null,
+	string? Brand = null,
+	int? DeliveryDays = null);
 
 public sealed record UpdateProductRequest(
 	string Name,
@@ -16,4 +21,9 @@ public sealed record UpdateProductRequest(
 	string PriceCurrencyCode,
 	Guid? CategoryId,
 	string? Sku,
-	bool IsActive);
+	bool IsActive,
+	string? UnitOfMeasure = null,
+	decimal? TaxRate = null,
+	string? Supplier = null,
+	string? Brand = null,
+	int? DeliveryDays = null);

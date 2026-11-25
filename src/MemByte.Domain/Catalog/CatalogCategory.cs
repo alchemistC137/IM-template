@@ -1,8 +1,8 @@
 namespace MemByte.Domain.Catalog;
 
 /// <summary>
-/// Categoría (o subcategoría) del catálogo de productos y servicios de un
-/// cliente de la plantilla. Se organiza en árbol mediante
+/// Categoría (o subcategoría) del catálogo único de la instalación.
+/// Se organiza en árbol mediante
 /// <see cref="ParentCategoryId"/>; la validación de que no se formen ciclos
 /// al mover una categoría corresponde a la capa de aplicación/infraestructura,
 /// que sí tiene visibilidad del árbol completo.
@@ -12,13 +12,6 @@ public class CatalogCategory
 	public const int NameMaxLength = 150;
 
 	public Guid Id { get; private set; }
-
-	/// <summary>
-	/// Cliente propietario del catálogo. Es obligatorio: no existe un
-	/// catálogo "global" sin cliente, ni siquiera para MemByte (que gestiona
-	/// su propio catálogo de soluciones digitales como un cliente más).
-	/// </summary>
-	public Guid ClientId { get; private set; }
 
 	public string Name { get; private set; } = string.Empty;
 
@@ -33,13 +26,9 @@ public class CatalogCategory
 		// Requerido por EF Core.
 	}
 
-	public CatalogCategory(Guid clientId, string name, Guid? parentCategoryId = null, bool isActive = true)
+	public CatalogCategory(string name, Guid? parentCategoryId = null, bool isActive = true)
 	{
-		if (clientId == Guid.Empty)
-			throw new ArgumentException("La categoría debe pertenecer a un cliente.", nameof(clientId));
-
 		Id = Guid.NewGuid();
-		ClientId = clientId;
 		CreatedAt = DateTimeOffset.UtcNow;
 		SetName(name);
 		ParentCategoryId = parentCategoryId;
